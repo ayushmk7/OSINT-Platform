@@ -1,0 +1,51 @@
+# Military flight positions via the adsb.lol v2 /mil endpoint (global, no key).
+schema_version: 1
+
+name: adsb_military
+source_type: adsb_military
+layer_type: flights_military
+display_name: "Military Flights"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://api.adsb.lol/v2/mil"
+  method: GET
+  headers:
+    Accept: "application/json"
+  timeout: "30s"
+  interval: "30s"
+  retry:
+    max_attempts: 2
+    backoff: exponential
+    initial_delay: "1s"
+    max_delay: "10s"
+
+parser:
+  format: json
+  records_path: "ac"
+  max_records: 10000
+
+entity:
+  external_id: "hex"
+  name: "flight"
+  category: "aircraft"
+  metadata:
+    callsign: "flight"
+    hex: "hex"
+    type: "t"
+    registration: "r"
+
+# altitude (alt_baro) is in feet and speed (gs) in knots — the original unit
+# conversions to meters/(m/s) are dropped since the engine maps a single path.
+observation:
+  latitude: "lat"
+  longitude: "lon"
+  altitude: "alt_baro"
+  speed: "gs"
+  heading: "track"
+
+# append: each poll adds a trail point stamped with the ingestion time (the feed
+# carries no per-record timestamp).
+recording:
+  mode: append

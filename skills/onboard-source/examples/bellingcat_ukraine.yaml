@@ -1,0 +1,49 @@
+# Bellingcat Ukraine Civilian Harm Database - verified civilian-harm incidents
+# Source: https://ukraine.bellingcat.com/ (flat JSON array of event objects)
+schema_version: 1
+
+name: bellingcat_ukraine
+source_type: bellingcat_ukraine
+layer_type: ukraine_civilian_harm
+display_name: "Bellingcat Ukraine Civilian Harm"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://bellingcat-embeds.ams3.cdn.digitaloceanspaces.com/production/ukr/timemap/api.json"
+  method: GET
+  headers:
+    Accept: "application/json"
+  timeout: "30s"
+  interval: "7200s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "5s"
+    max_delay: "60s"
+
+parser:
+  format: json
+  records_path: ""
+  max_records: 100000
+
+entity:
+  external_id: "id"
+  name: "location"
+  category: "geological"
+  metadata:
+    location: "location"
+    description: "description"
+    date: "date"
+    graphic: "graphic"
+
+observation:
+  latitude: "latitude"
+  longitude: "longitude"
+  altitude: "0"
+  speed: "0"
+  heading: "0"
+  timestamp: "date"
+
+recording:
+  mode: upsert

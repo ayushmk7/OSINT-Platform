@@ -1,0 +1,47 @@
+# Global Military Bases & Installations - Wikidata SPARQL
+# Source: https://query.wikidata.org/sparql (SPARQL JSON results, CC0)
+schema_version: 1
+
+name: military_bases_wikidata
+source_type: military_bases_wikidata
+layer_type: military_bases
+display_name: "Military Bases"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://query.wikidata.org/sparql?format=json&query=SELECT%20%3Fbase%20%3FbaseLabel%20%3Flat%20%3Flon%20%3FcountryLabel%20%3FoperatorLabel%20WHERE%20%7B%20%3Fbase%20wdt%3AP31/wdt%3AP279%2A%20wd%3AQ245016%20.%20%3Fbase%20p%3AP625%20%3Fcs%20.%20%3Fcs%20psv%3AP625%20%3Fcn%20.%20%3Fcn%20wikibase%3AgeoLatitude%20%3Flat%20.%20%3Fcn%20wikibase%3AgeoLongitude%20%3Flon%20.%20OPTIONAL%20%7B%20%3Fbase%20wdt%3AP17%20%3Fcountry%20%7D%20OPTIONAL%20%7B%20%3Fbase%20wdt%3AP137%20%3Foperator%20%7D%20SERVICE%20wikibase%3Alabel%20%7B%20bd%3AserviceParam%20wikibase%3Alanguage%20%22en%22%20.%20%7D%20%7D%20LIMIT%2012000"
+  method: GET
+  headers:
+    Accept: "application/sparql-results+json"
+    User-Agent: "reconvillage-workshop/1.0 (https://github.com/reconvillage-workshop/1.0)"
+  timeout: "60s"
+  interval: "86400s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "10s"
+    max_delay: "120s"
+
+parser:
+  format: json
+  records_path: "results.bindings"
+  max_records: 12000
+
+entity:
+  external_id: "base.value"
+  name: "baseLabel.value"
+  category: "aircraft"
+  metadata:
+    country: "countryLabel.value"
+    operator: "operatorLabel.value"
+
+observation:
+  latitude: "lat.value"
+  longitude: "lon.value"
+  altitude: "0"
+  speed: "0"
+  heading: "0"
+
+recording:
+  mode: upsert

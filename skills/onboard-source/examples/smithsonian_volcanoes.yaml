@@ -1,0 +1,51 @@
+# Significant volcanic eruptions from the NOAA NCEI database (Smithsonian GVP).
+# API: ngdc.noaa.gov hazard-service volcanoes endpoint (minYear=2000).
+schema_version: 1
+
+name: smithsonian_volcanoes
+source_type: smithsonian_volcanoes
+layer_type: volcanoes
+display_name: "Smithsonian Volcanoes"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://www.ngdc.noaa.gov/hazel/hazard-service/api/v1/volcanoes?minYear=2000&maxRows=500"
+  method: GET
+  headers:
+    Accept: "application/json"
+  timeout: "15s"
+  interval: "1800s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "2s"
+    max_delay: "30s"
+
+parser:
+  format: json
+  records_path: "items"
+  max_records: 10000
+
+entity:
+  external_id: "volcanoLocationNewNum"
+  name: "name"
+  category: "geological"
+  metadata:
+    elevation: "elevation"
+    morphology: "morphology"
+    status: "status"
+    country: "country"
+    location: "location"
+    vei: "vei"
+    last_eruption_year: "year"
+
+observation:
+  latitude: "latitude"
+  longitude: "longitude"
+  altitude: "elevation"
+  speed: "0"
+  heading: "0"
+
+recording:
+  mode: upsert

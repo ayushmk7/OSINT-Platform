@@ -1,0 +1,57 @@
+# Upcoming rocket launches from Launch Library 2 by TheSpaceDevs.
+# API docs: https://thespacedevs.com/llapi (lldev dev endpoint).
+schema_version: 1
+
+name: spacedevs_launches
+source_type: spacedevs_launches
+layer_type: rocket_launches
+display_name: "Upcoming Launches"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://lldev.thespacedevs.com/2.3.0/launches/upcoming/?limit=50&mode=normal"
+  method: GET
+  headers:
+    Accept: "application/json"
+    User-Agent: "reconvillage-workshop/1.0"
+  timeout: "15s"
+  interval: "1800s"
+  retry:
+    max_attempts: 2
+    backoff: exponential
+    initial_delay: "5s"
+    max_delay: "60s"
+
+parser:
+  format: json
+  records_path: "results"
+  max_records: 500
+
+entity:
+  external_id: "id"
+  name: "name"
+  category: "satellite"
+  metadata:
+    status: "status.name"
+    status_abbrev: "status.abbrev"
+    net: "net"
+    window_start: "window_start"
+    window_end: "window_end"
+    rocket: "rocket.configuration.full_name"
+    mission: "mission.name"
+    mission_type: "mission.type"
+    orbit: "mission.orbit.name"
+    provider: "launch_service_provider.name"
+    pad_name: "pad.name"
+    location: "pad.location.name"
+
+observation:
+  latitude: "pad.latitude"
+  longitude: "pad.longitude"
+  altitude: "0"
+  speed: "0"
+  heading: "0"
+
+recording:
+  mode: upsert

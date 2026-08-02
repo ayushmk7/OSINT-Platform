@@ -1,0 +1,46 @@
+# International Space Station real-time position tracker.
+# Source: Where the ISS at? API (https://wheretheiss.at/). Single JSON object.
+schema_version: 1
+
+name: iss_position
+source_type: iss_position
+layer_type: iss
+display_name: "ISS Position"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://api.wheretheiss.at/v1/satellites/25544"
+  method: GET
+  headers:
+    Accept: "application/json"
+  timeout: "10s"
+  interval: "60s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "1s"
+    max_delay: "15s"
+
+parser:
+  format: json
+  max_records: 1
+
+entity:
+  external_id: "id"
+  name: "name"
+  category: "satellite"
+  metadata:
+    norad_id: "id"
+    visibility: "visibility"
+
+observation:
+  latitude: "latitude"
+  longitude: "longitude"
+  altitude: "altitude"
+  speed: "velocity"
+  heading: "0"
+  timestamp: "timestamp"
+
+recording:
+  mode: append

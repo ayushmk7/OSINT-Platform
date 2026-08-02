@@ -1,0 +1,52 @@
+# Active SIGMETs/AIRMETs from the FAA Aviation Weather Center (no key).
+# Area hazards are placed at their first coordinate; the original composite
+# id (icaoId + alphaChar + validTimeFrom) is reduced to icaoId, so upsert keeps
+# the latest hazard per FIR region.
+schema_version: 1
+
+name: aviationweather_sigmets
+source_type: aviationweather_sigmets
+layer_type: aviation_weather
+display_name: "Aviation SIGMETs"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://aviationweather.gov/api/data/airsigmet?format=json"
+  method: GET
+  headers:
+    Accept: "application/json"
+    User-Agent: "reconvillage-workshop/1.0"
+  timeout: "15s"
+  interval: "600s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "2s"
+    max_delay: "30s"
+
+parser:
+  format: json
+  records_path: ""
+  max_records: 5000
+
+entity:
+  external_id: "icaoId"
+  name: "hazard"
+  category: "aircraft"
+  metadata:
+    hazard: "hazard"
+    sigmet_type: "airSigmetType"
+    severity: "severity"
+    icao_id: "icaoId"
+
+observation:
+  latitude: "coords[0].lat"
+  longitude: "coords[0].lon"
+  altitude: "0"
+  speed: "0"
+  heading: "0"
+  timestamp: "validTimeFrom"
+
+recording:
+  mode: upsert

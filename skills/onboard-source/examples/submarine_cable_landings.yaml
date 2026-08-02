@@ -1,0 +1,47 @@
+# TeleGeography submarine cable landing points (GeoJSON, static infrastructure).
+# Source: submarinecablemap.com/api/v3/landing-point/landing-point-geo.json
+schema_version: 1
+
+name: submarine_cable_landings
+source_type: submarine_cable_landings
+layer_type: subsea_cables
+display_name: "Submarine Cable Landing Points"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://www.submarinecablemap.com/api/v3/landing-point/landing-point-geo.json"
+  method: GET
+  headers:
+    Accept: "application/json"
+  timeout: "15s"
+  interval: "604800s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "2s"
+    max_delay: "30s"
+
+parser:
+  format: geojson
+  records_path: "features"
+  max_records: 10000
+
+entity:
+  external_id: "properties.id"
+  name: "properties.name"
+  category: "maritime"
+  metadata:
+    landing_point_id: "properties.id"
+    name: "properties.name"
+    is_tbd: "properties.is_tbd"
+
+observation:
+  latitude: "geometry.coordinates[1]"
+  longitude: "geometry.coordinates[0]"
+  altitude: "0"
+  speed: "0"
+  heading: "0"
+
+recording:
+  mode: upsert

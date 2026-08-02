@@ -1,0 +1,49 @@
+# GDACS Global Disaster Alert and Coordination System (UN/EU).
+# Source: gdacs.org geteventlist SEARCH endpoint (GeoJSON FeatureCollection).
+schema_version: 1
+
+name: gdacs_disasters
+source_type: gdacs_disasters
+layer_type: disaster_alerts
+display_name: "GDACS Disaster Alerts"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventtype=EQ,TC,FL,VO,WF&alertlevel=Green,Orange,Red&limit=100"
+  method: GET
+  headers:
+    Accept: "application/json"
+  timeout: "15s"
+  interval: "900s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "2s"
+    max_delay: "30s"
+
+parser:
+  format: geojson
+  records_path: "features"
+  max_records: 1000
+
+entity:
+  external_id: "properties.eventid"
+  name: "properties.name"
+  category: "geological"
+  metadata:
+    eventtype: "properties.eventtype"
+    alertlevel: "properties.alertlevel"
+    severity: "properties.severitydata.severitytext"
+    country: "properties.country"
+
+observation:
+  latitude: "geometry.coordinates[1]"
+  longitude: "geometry.coordinates[0]"
+  altitude: "0"
+  speed: "0"
+  heading: "0"
+  timestamp: "properties.fromdate"
+
+recording:
+  mode: upsert

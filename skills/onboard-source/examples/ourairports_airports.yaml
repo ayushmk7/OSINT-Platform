@@ -1,0 +1,50 @@
+# OurAirports global airport registry (CSV, ~5.3k large/medium airports).
+# Source: davidmegginson.github.io/ourairports-data/airports.csv (public domain).
+schema_version: 1
+
+name: ourairports_airports
+source_type: ourairports_airports
+layer_type: airports
+display_name: "Airports"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://davidmegginson.github.io/ourairports-data/airports.csv"
+  method: GET
+  headers:
+    Accept: "text/csv"
+    User-Agent: "reconvillage-workshop/1.0"
+  timeout: "45s"
+  interval: "604800s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "5s"
+    max_delay: "60s"
+
+parser:
+  format: csv
+  max_records: 100000
+
+entity:
+  external_id: "ident"
+  name: "name"
+  category: "aircraft"
+  metadata:
+    icao: "icao_code"
+    iata: "iata_code"
+    airport_type: "type"
+    country: "iso_country"
+    municipality: "municipality"
+    elevation_ft: "elevation_ft"
+
+observation:
+  latitude: "latitude_deg"
+  longitude: "longitude_deg"
+  altitude: "0"
+  speed: "0"
+  heading: "0"
+
+recording:
+  mode: upsert

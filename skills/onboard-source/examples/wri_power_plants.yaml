@@ -1,0 +1,48 @@
+# WRI Global Power Plant Database - worldwide electricity generation facilities
+# Source: wri/global-power-plant-database (CSV, ~35k plants, CC BY 4.0)
+schema_version: 1
+
+name: wri_power_plants
+source_type: wri_power_plants
+layer_type: power_plants
+display_name: "Power Plants"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://raw.githubusercontent.com/wri/global-power-plant-database/master/output_database/global_power_plant_database.csv"
+  method: GET
+  headers:
+    Accept: "text/csv"
+    User-Agent: "reconvillage-workshop/1.0"
+  timeout: "45s"
+  interval: "2592000s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "5s"
+    max_delay: "60s"
+
+parser:
+  format: csv
+  max_records: 40000
+
+entity:
+  external_id: "gppd_idnr"
+  name: "name"
+  category: "radiation"
+  metadata:
+    country: "country_long"
+    primary_fuel: "primary_fuel"
+    capacity_mw: "capacity_mw"
+    owner: "owner"
+
+observation:
+  latitude: "latitude"
+  longitude: "longitude"
+  altitude: "0"
+  speed: "0"
+  heading: "0"
+
+recording:
+  mode: upsert

@@ -1,0 +1,48 @@
+# OpenSky Network live aircraft states (/states/all API).
+# Records are positional arrays; fields are mapped by index position.
+schema_version: 1
+
+name: open_sky_flights
+source_type: open_sky_flights
+layer_type: flights_commercial
+display_name: "OpenSky Flights"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://opensky-network.org/api/states/all"
+  method: GET
+  headers:
+    Accept: "application/json"
+  timeout: "30s"
+  interval: "120s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "10s"
+    max_delay: "60s"
+
+parser:
+  format: json
+  records_path: "states"
+  max_records: 10000
+
+entity:
+  external_id: "[0]"
+  name: "[1]"
+  category: "aircraft"
+  metadata:
+    callsign: "[1]"
+    origin_country: "[2]"
+    icao24: "[0]"
+
+observation:
+  latitude: "[6]"
+  longitude: "[5]"
+  altitude: "[7]"
+  speed: "[9]"
+  heading: "[10]"
+  timestamp: "[4]"
+
+recording:
+  mode: append

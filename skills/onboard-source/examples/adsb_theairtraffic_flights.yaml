@@ -1,0 +1,53 @@
+# TheAirTraffic global ADS-B snapshot — the entire globe in one poll (no key).
+# The Cloudflare-fronted endpoint rejects non-browser clients, so a browser
+# User-Agent + Referer are required (these are not credentials).
+schema_version: 1
+
+name: adsb_theairtraffic_flights
+source_type: adsb_theairtraffic_flights
+layer_type: flights_commercial
+display_name: "TheAirTraffic Flights"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://globe.theairtraffic.com/data/aircraft.json"
+  method: GET
+  headers:
+    User-Agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    Referer: "https://globe.theairtraffic.com/"
+    Accept: "application/json"
+  timeout: "20s"
+  interval: "30s"
+  retry:
+    max_attempts: 2
+    backoff: exponential
+    initial_delay: "1s"
+    max_delay: "10s"
+
+parser:
+  format: json
+  records_path: "aircraft"
+  max_records: 20000
+
+entity:
+  external_id: "hex"
+  name: "flight"
+  category: "aircraft"
+  metadata:
+    callsign: "flight"
+    hex: "hex"
+    type: "t"
+    registration: "r"
+
+# altitude (alt_baro, feet) and speed (gs, knots) keep source units — the
+# original meter/(m/s) conversions are dropped since the engine maps one path.
+observation:
+  latitude: "lat"
+  longitude: "lon"
+  altitude: "alt_baro"
+  speed: "gs"
+  heading: "track"
+
+recording:
+  mode: append

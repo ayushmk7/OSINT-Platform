@@ -1,0 +1,50 @@
+# Global Nuclear Facilities - Wikidata SPARQL
+# Source: https://query.wikidata.org/sparql (SPARQL JSON results, CC0)
+schema_version: 1
+
+name: wikidata_nuclear_facilities
+source_type: wikidata_nuclear_facilities
+layer_type: nuclear_facilities
+display_name: "Nuclear Facilities"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://query.wikidata.org/sparql?format=json&query=SELECT%20%3Ffacility%20%3FfacilityLabel%20%3Flat%20%3Flon%20%3FcountryLabel%20%3FoperatorLabel%20%3FreactorTypeLabel%20%3Fcapacity%20%3FstatusLabel%20%3Fcommissioned%20%3Fdecommissioned%20%3FfacilityType%20%3FprisId%20WHERE%20%7B%20VALUES%20%3FfacilityType%20%7B%20wd%3AQ134447%20wd%3AQ1438105%20wd%3AQ64785417%20wd%3AQ21493801%20%7D%20%3Ffacility%20wdt%3AP31%20%3FfacilityType%20.%20%3Ffacility%20p%3AP625%20%3FcoordStmt%20.%20%3FcoordStmt%20psv%3AP625%20%3FcoordNode%20.%20%3FcoordNode%20wikibase%3AgeoLatitude%20%3Flat%20.%20%3FcoordNode%20wikibase%3AgeoLongitude%20%3Flon%20.%20OPTIONAL%20%7B%20%3Ffacility%20wdt%3AP17%20%3Fcountry%20%7D%20OPTIONAL%20%7B%20%3Ffacility%20wdt%3AP137%20%3Foperator%20%7D%20OPTIONAL%20%7B%20%3Ffacility%20wdt%3AP516%20%3FreactorType%20%7D%20OPTIONAL%20%7B%20%3Ffacility%20wdt%3AP1102%20%3Fcapacity%20%7D%20OPTIONAL%20%7B%20%3Ffacility%20wdt%3AP5817%20%3Fstatus%20%7D%20OPTIONAL%20%7B%20%3Ffacility%20wdt%3AP729%20%3Fcommissioned%20%7D%20OPTIONAL%20%7B%20%3Ffacility%20wdt%3AP730%20%3Fdecommissioned%20%7D%20OPTIONAL%20%7B%20%3Ffacility%20wdt%3AP1249%20%3FprisId%20%7D%20SERVICE%20wikibase%3Alabel%20%7B%20bd%3AserviceParam%20wikibase%3Alanguage%20%22en%22%20.%20%7D%20%7D%20LIMIT%202000"
+  method: GET
+  headers:
+    Accept: "application/sparql-results+json"
+    User-Agent: "reconvillage-workshop/1.0 (https://github.com/reconvillage-workshop/1.0)"
+  timeout: "30s"
+  interval: "86400s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "10s"
+    max_delay: "120s"
+
+parser:
+  format: json
+  records_path: "results.bindings"
+  max_records: 2000
+
+entity:
+  external_id: "facility.value"
+  name: "facilityLabel.value"
+  category: "radiation"
+  metadata:
+    country: "countryLabel.value"
+    operator: "operatorLabel.value"
+    reactor_type: "reactorTypeLabel.value"
+    capacity_mwe: "capacity.value"
+    iaea_pris_id: "prisId.value"
+
+observation:
+  latitude: "lat.value"
+  longitude: "lon.value"
+  altitude: "0"
+  speed: "0"
+  heading: "0"
+
+recording:
+  mode: upsert

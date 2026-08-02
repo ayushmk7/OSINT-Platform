@@ -1,0 +1,47 @@
+# Safecast - Crowdsourced Radiation Monitoring Network
+# Source: https://api.safecast.org/measurements.json (flat JSON array, CC0)
+schema_version: 1
+
+name: safecast_radiation
+source_type: safecast_radiation
+layer_type: radiation
+display_name: "Safecast Radiation"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://api.safecast.org/measurements.json?limit=1000"
+  method: GET
+  headers:
+    Accept: "application/json"
+  timeout: "15s"
+  interval: "86400s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "2s"
+    max_delay: "30s"
+
+parser:
+  format: json
+  max_records: 5000
+
+entity:
+  external_id: "id"
+  name: "value"
+  category: "radiation"
+  metadata:
+    value_cpm: "value"
+    unit: "unit"
+    device_id: "device_id"
+
+observation:
+  latitude: "latitude"
+  longitude: "longitude"
+  altitude: "0"
+  speed: "0"
+  heading: "0"
+  timestamp: "captured_at"
+
+recording:
+  mode: append

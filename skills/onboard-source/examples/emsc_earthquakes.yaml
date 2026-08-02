@@ -1,0 +1,52 @@
+# European-Mediterranean Seismological Centre earthquakes (GeoJSON).
+# API: FDSN event web service (Seismic Portal). Complements USGS on the same layer.
+schema_version: 1
+
+name: emsc_earthquakes
+source_type: emsc_earthquakes
+layer_type: earthquakes
+display_name: "EMSC Earthquakes"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://www.seismicportal.eu/fdsnws/event/1/query?format=json&limit=100&orderby=time"
+  method: GET
+  headers:
+    Accept: "application/json"
+  timeout: "10s"
+  interval: "60s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "1s"
+    max_delay: "30s"
+
+parser:
+  format: geojson
+  records_path: "features"
+  max_records: 10000
+
+entity:
+  external_id: "id"
+  name: "properties.flynn_region"
+  category: "geological"
+  metadata:
+    magnitude: "properties.mag"
+    depth: "properties.depth"
+    place: "properties.flynn_region"
+    type: "properties.evtype"
+    source: "EMSC"
+    magtype: "properties.magtype"
+    auth: "properties.auth"
+
+observation:
+  latitude: "geometry.coordinates[1]"
+  longitude: "geometry.coordinates[0]"
+  altitude: "geometry.coordinates[2]"
+  speed: "0"
+  heading: "0"
+  timestamp: "properties.time"
+
+recording:
+  mode: upsert

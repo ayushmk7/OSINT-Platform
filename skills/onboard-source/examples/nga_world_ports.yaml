@@ -1,0 +1,49 @@
+# NGA World Port Index (Pub 150) - global catalog of ~2,950 ports & terminals.
+# Source: msi.nga.mil/api/publications/world-port-index (U.S. gov, public domain).
+schema_version: 1
+
+name: nga_world_ports
+source_type: nga_world_ports
+layer_type: ports
+display_name: "World Ports"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://msi.nga.mil/api/publications/world-port-index?output=json"
+  method: GET
+  headers:
+    Accept: "application/json"
+    User-Agent: "reconvillage-workshop/1.0 (https://github.com/reconvillage-workshop/1.0)"
+  timeout: "60s"
+  interval: "86400s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "10s"
+    max_delay: "120s"
+
+parser:
+  format: json
+  records_path: "ports"
+  max_records: 3500
+
+entity:
+  external_id: "portNumber"
+  name: "portName"
+  category: "maritime"
+  metadata:
+    country: "countryName"
+    water_body: "dodWaterBody"
+    harbor_size: "harborSize"
+    harbor_type: "harborType"
+
+observation:
+  latitude: "ycoord"
+  longitude: "xcoord"
+  altitude: "0"
+  speed: "0"
+  heading: "0"
+
+recording:
+  mode: upsert

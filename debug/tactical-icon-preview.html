@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ReconVillage — Tactical Marker Icons Preview</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        padding: 32px;
+        background: #050505;
+        color: #e8e8e8;
+        font-family: "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
+      }
+      h1 {
+        color: #00ff9d;
+        font-size: 18px;
+        letter-spacing: 0.15em;
+        margin: 0 0 6px;
+      }
+      .sub {
+        color: #888;
+        font-size: 12px;
+        margin: 0 0 28px;
+        max-width: 760px;
+        line-height: 1.5;
+      }
+      h2 {
+        color: #00ff9d;
+        font-size: 13px;
+        letter-spacing: 0.12em;
+        margin: 34px 0 14px;
+        font-weight: 600;
+      }
+      .grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+      .card {
+        background: #0d0d0d;
+        border: 1px solid #1f2937;
+        border-radius: 8px;
+        padding: 18px 16px 14px;
+        width: 150px;
+        text-align: center;
+      }
+      .card canvas {
+        display: block;
+        margin: 0 auto 12px;
+      }
+      .cat {
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+      }
+      .shape {
+        font-size: 11px;
+        color: #aaa;
+        margin-top: 3px;
+      }
+      .hex {
+        font-size: 11px;
+        color: #666;
+        margin-top: 1px;
+      }
+      .rotrow {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        flex-wrap: wrap;
+        background: #0d0d0d;
+        border: 1px solid #1f2937;
+        border-radius: 8px;
+        padding: 16px;
+        width: max-content;
+        max-width: 100%;
+      }
+      .rotlabel {
+        width: 84px;
+        font-size: 11px;
+        color: #aaa;
+        letter-spacing: 0.05em;
+      }
+      .rotcell {
+        text-align: center;
+      }
+      .rotcell .deg {
+        font-size: 10px;
+        color: #666;
+        margin-top: 4px;
+      }
+      .note {
+        color: #666;
+        font-size: 11px;
+        margin-top: 30px;
+        max-width: 760px;
+        line-height: 1.6;
+      }
+      .note b {
+        color: #999;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>RECONVILLAGE // TACTICAL MARKER ICONS</h1>
+    <p class="sub">
+      Step-4 globe markers — filled Canvas-2D silhouettes (no disc, no ring border), drawn from
+      the exact <code>drawX(ctx, color)</code> functions in the plan. Color is baked in; the Cesium
+      billboard uses <code>Color.WHITE</code>. Icons shown large for inspection; on the globe they
+      render at ~32&nbsp;px.
+    </p>
+
+    <div class="grid" id="grid"></div>
+
+    <h2>HEADING ROTATION — silhouettes point north (0°) and rotate to travel bearing</h2>
+    <div id="rotsection"></div>
+
+    <p class="note">
+      <b>satellite</b> diamond · <b>aircraft</b> top-down airplane (rotates) ·
+      <b>geological</b> earthquake epicenter, concentric seismic rings ·
+      <b>radiation</b> trefoil · <b>maritime</b> top-down vessel (rotates) · <b>fallback</b> dot.
+      Each fills a solid silhouette in the category color with a black inset cutout for an
+      embossed, outlined feel plus a center dot.
+    </p>
+
+    <script>
+      // ================= exact draw functions from globeMarkers.ts =================
+      const ICON_SIZE = 32;
+      const CX = ICON_SIZE / 2;
+      const CY = ICON_SIZE / 2;
+
+      function drawSatelliteIcon(ctx, color) {
+        ctx.fillStyle = color;
+        const R = 11;
+        ctx.beginPath();
+        ctx.moveTo(CX, CY - R); ctx.lineTo(CX + R, CY); ctx.lineTo(CX, CY + R); ctx.lineTo(CX - R, CY);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = "#000000";
+        const IR = 6;
+        ctx.beginPath();
+        ctx.moveTo(CX, CY - IR); ctx.lineTo(CX + IR, CY); ctx.lineTo(CX, CY + IR); ctx.lineTo(CX - IR, CY);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(CX, CY, 2.5, 0, Math.PI * 2); ctx.fill();
+      }
+
+      function drawFlightIcon(ctx, color) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(CX, 3); ctx.lineTo(CX + 2, 8); ctx.lineTo(CX + 2, 22); ctx.lineTo(CX + 3, 27);
+        ctx.lineTo(CX - 3, 27); ctx.lineTo(CX - 2, 22); ctx.lineTo(CX - 2, 8);
+        ctx.closePath(); ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(CX, 12); ctx.lineTo(CX + 13, 18); ctx.lineTo(CX + 12, 20); ctx.lineTo(CX, 15);
+        ctx.lineTo(CX - 12, 20); ctx.lineTo(CX - 13, 18);
+        ctx.closePath(); ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(CX, 24); ctx.lineTo(CX + 6, 28); ctx.lineTo(CX + 5, 29); ctx.lineTo(CX, 26);
+        ctx.lineTo(CX - 5, 29); ctx.lineTo(CX - 6, 28);
+        ctx.closePath(); ctx.fill();
+      }
+
+      function drawEarthquakeIcon(ctx, color) {
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.3; ctx.beginPath(); ctx.arc(CX, CY, 13, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.arc(CX, CY, 8, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1.0;
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(CX, CY, 3.5, 0, Math.PI * 2); ctx.fill();
+      }
+
+      function drawRadiationIcon(ctx, color) {
+        ctx.fillStyle = color; ctx.beginPath(); ctx.arc(CX, CY, 14, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#000000"; ctx.beginPath(); ctx.arc(CX, CY, 11, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = color;
+        const innerR = 3.5, outerR = 10, bladeArc = Math.PI / 3;
+        for (let i = 0; i < 3; i++) {
+          const angle = (i * 2 * Math.PI) / 3 - Math.PI / 2;
+          ctx.beginPath();
+          ctx.arc(CX, CY, outerR, angle - bladeArc / 2, angle + bladeArc / 2);
+          ctx.arc(CX, CY, innerR, angle + bladeArc / 2, angle - bladeArc / 2, true);
+          ctx.closePath(); ctx.fill();
+        }
+        ctx.beginPath(); ctx.arc(CX, CY, 2.5, 0, Math.PI * 2); ctx.fill();
+      }
+
+      function drawShipIcon(ctx, color) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(CX, 3); ctx.lineTo(CX + 8, 12); ctx.lineTo(CX + 8, 28); ctx.lineTo(CX - 8, 28); ctx.lineTo(CX - 8, 12);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = "#000000";
+        ctx.beginPath();
+        ctx.moveTo(CX, 8); ctx.lineTo(CX + 5, 14); ctx.lineTo(CX + 5, 26); ctx.lineTo(CX - 5, 26); ctx.lineTo(CX - 5, 14);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = color;
+        ctx.fillRect(CX - 3, 17, 6, 6);
+        ctx.beginPath(); ctx.arc(CX, CY + 4, 1.5, 0, Math.PI * 2); ctx.fill();
+      }
+
+      function drawDefaultIcon(ctx, color) {
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(CX, CY, 6, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // ================= preview rendering =================
+      const CATS = [
+        ["satellite", drawSatelliteIcon, "#00f3ff", "diamond"],
+        ["aircraft", drawFlightIcon, "#ffaa00", "airplane"],
+        ["geological", drawEarthquakeIcon, "#ff0055", "earthquake"],
+        ["radiation", drawRadiationIcon, "#ffcc00", "trefoil"],
+        ["maritime", drawShipIcon, "#4fc3f7", "vessel"],
+        ["fallback", drawDefaultIcon, "#9ca3af", "dot"],
+      ];
+
+      const DPR = window.devicePixelRatio || 1;
+      function renderIcon(drawFn, color, px, rotationDeg) {
+        const canvas = document.createElement("canvas");
+        canvas.width = px * DPR;
+        canvas.height = px * DPR;
+        canvas.style.width = px + "px";
+        canvas.style.height = px + "px";
+        const ctx = canvas.getContext("2d");
+        ctx.scale(DPR, DPR);
+        if (rotationDeg) {
+          ctx.translate(px / 2, px / 2);
+          ctx.rotate((rotationDeg * Math.PI) / 180);
+          ctx.translate(-px / 2, -px / 2);
+        }
+        const s = px / ICON_SIZE;
+        ctx.scale(s, s);
+        drawFn(ctx, color);
+        return canvas;
+      }
+
+      const grid = document.getElementById("grid");
+      for (const [name, fn, color, shape] of CATS) {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.appendChild(renderIcon(fn, color, 88, 0));
+        const cat = document.createElement("div");
+        cat.className = "cat";
+        cat.textContent = name;
+        cat.style.color = color;
+        const shp = document.createElement("div");
+        shp.className = "shape";
+        shp.textContent = shape;
+        const hex = document.createElement("div");
+        hex.className = "hex";
+        hex.textContent = color;
+        card.append(cat, shp, hex);
+        grid.appendChild(card);
+      }
+
+      const rotsection = document.getElementById("rotsection");
+      const HEADINGS = [0, 45, 90, 135, 180, 225, 270, 315];
+      for (const [label, fn, color] of [
+        ["aircraft", drawFlightIcon, "#ffaa00"],
+        ["maritime", drawShipIcon, "#4fc3f7"],
+      ]) {
+        const row = document.createElement("div");
+        row.className = "rotrow";
+        row.style.marginBottom = "14px";
+        const lab = document.createElement("div");
+        lab.className = "rotlabel";
+        lab.textContent = label;
+        lab.style.color = color;
+        row.appendChild(lab);
+        for (const deg of HEADINGS) {
+          const cell = document.createElement("div");
+          cell.className = "rotcell";
+          cell.appendChild(renderIcon(fn, color, 52, deg));
+          const d = document.createElement("div");
+          d.className = "deg";
+          d.textContent = deg + "°";
+          cell.appendChild(d);
+          row.appendChild(cell);
+        }
+        rotsection.appendChild(row);
+      }
+    </script>
+  </body>
+</html>

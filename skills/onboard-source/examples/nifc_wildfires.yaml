@@ -1,0 +1,50 @@
+# NIFC WFIGS active wildfire perimeters (National Interagency Fire Center).
+# Source: ArcGIS FeatureServer (GeoJSON). Position uses each fire's origin point.
+schema_version: 1
+
+name: nifc_wildfires
+source_type: nifc_wildfires
+layer_type: wildfires
+display_name: "US Wildfires"
+enabled: true
+
+transport:
+  type: http_poll
+  url: "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query?where=1%3D1&outFields=poly_IncidentName,poly_GISAcres,poly_DateCurrent,poly_IRWINID,attr_IncidentName,attr_PercentContained,attr_GACC,attr_POOState,attr_POOCounty,attr_FireDiscoveryDateTime,attr_FireCauseGeneral,attr_IncidentSize,attr_IrwinID,attr_InitialLatitude,attr_InitialLongitude,attr_TotalIncidentPersonnel,attr_EstimatedCostToDate&f=geojson"
+  method: GET
+  headers:
+    Accept: "application/json"
+    User-Agent: "reconvillage-workshop/1.0"
+  timeout: "30s"
+  interval: "3600s"
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: "2s"
+    max_delay: "30s"
+
+parser:
+  format: geojson
+  records_path: "features"
+  max_records: 5000
+
+entity:
+  external_id: "properties.attr_IrwinID"
+  name: "properties.attr_IncidentName"
+  category: "geological"
+  metadata:
+    state: "properties.attr_POOState"
+    county: "properties.attr_POOCounty"
+    gacc: "properties.attr_GACC"
+    cause: "properties.attr_FireCauseGeneral"
+
+observation:
+  latitude: "properties.attr_InitialLatitude"
+  longitude: "properties.attr_InitialLongitude"
+  altitude: "0"
+  speed: "0"
+  heading: "0"
+  timestamp: "properties.attr_FireDiscoveryDateTime"
+
+recording:
+  mode: upsert
