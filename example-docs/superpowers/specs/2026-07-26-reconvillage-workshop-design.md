@@ -39,7 +39,7 @@ The goal of the workshop is to guide students through building a real-time 3D Ge
 ## 2. Deliverables Structure
 
 ```
-reconvillage-workshop/
+vibe-coding-osint-platform/
 ├── AGENTS.md                                  # Instructions & tool context for AI agents
 ├── Makefile                                   # Command runner for development & testing
 ├── docs/

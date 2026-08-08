@@ -10,7 +10,7 @@ This specification details the foundational architecture for the ReconVillage OS
 ## 2. Workspace & Monorepo Structure
 
 ```
-reconvillage-workshop/
+vibe-coding-osint-platform/
 ├── Makefile
 ├── package.json
 ├── docs/

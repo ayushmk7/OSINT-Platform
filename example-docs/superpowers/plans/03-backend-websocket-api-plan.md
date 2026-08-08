@@ -8,7 +8,7 @@ This step-by-step TDD implementation plan details the creation of the Express RE
 
 - [ ] **Step 1.1: Create Database Query Helpers (`backend/src/db/queries.ts`)**
 
-  File: `/Users/alevsk/Development/reconvillage-workshop/backend/src/db/queries.ts`
+  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/db/queries.ts`
   ```typescript
   import { getDatabase } from './database';
 
@@ -118,7 +118,7 @@ This step-by-step TDD implementation plan details the creation of the Express RE
 
 - [ ] **Step 1.2: Implement Sources Route (`backend/src/api/routes/sources.ts`)**
 
-  File: `/Users/alevsk/Development/reconvillage-workshop/backend/src/api/routes/sources.ts`
+  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/api/routes/sources.ts`
   ```typescript
   import { Router, Request, Response } from 'express';
   import { getAllSources } from '../../db/queries';
@@ -143,7 +143,7 @@ This step-by-step TDD implementation plan details the creation of the Express RE
 
 - [ ] **Step 1.3: Implement Entities Route (`backend/src/api/routes/entities.ts`)**
 
-  File: `/Users/alevsk/Development/reconvillage-workshop/backend/src/api/routes/entities.ts`
+  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/api/routes/entities.ts`
   ```typescript
   import { Router, Request, Response } from 'express';
   import { getEntities } from '../../db/queries';
@@ -192,7 +192,7 @@ This step-by-step TDD implementation plan details the creation of the Express RE
 
 - [ ] **Step 1.4: Implement Observations Route (`backend/src/api/routes/observations.ts`)**
 
-  File: `/Users/alevsk/Development/reconvillage-workshop/backend/src/api/routes/observations.ts`
+  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/api/routes/observations.ts`
   ```typescript
   import { Router, Request, Response } from 'express';
   import { getObservations } from '../../db/queries';
@@ -233,7 +233,7 @@ This step-by-step TDD implementation plan details the creation of the Express RE
 
 - [ ] **Step 1.5: Register Routes in Express App Router (`backend/src/api/index.ts` & `backend/src/app.ts`)**
 
-  File: `/Users/alevsk/Development/reconvillage-workshop/backend/src/api/index.ts`
+  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/api/index.ts`
   ```typescript
   import { Router } from 'express';
   import sourcesRouter from './routes/sources';
@@ -251,7 +251,7 @@ This step-by-step TDD implementation plan details the creation of the Express RE
 
 - [ ] **Step 1.6: Write Integration Tests for REST Routes (`backend/src/__tests__/routes.test.ts`)**
 
-  File: `/Users/alevsk/Development/reconvillage-workshop/backend/src/__tests__/routes.test.ts`
+  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/__tests__/routes.test.ts`
   ```typescript
   import request from 'supertest';
   import express from 'express';
@@ -328,7 +328,7 @@ This step-by-step TDD implementation plan details the creation of the Express RE
 
 - [ ] **Step 2.1: Create Telemetry Broadcaster (`backend/src/websocket/broadcaster.ts`)**
 
-  File: `/Users/alevsk/Development/reconvillage-workshop/backend/src/websocket/broadcaster.ts`
+  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/websocket/broadcaster.ts`
   ```typescript
   import WebSocket from 'ws';
 
@@ -379,7 +379,7 @@ This step-by-step TDD implementation plan details the creation of the Express RE
 
 - [ ] **Step 2.2: Implement WebSocket Server & Heartbeat (`backend/src/websocket/server.ts`)**
 
-  File: `/Users/alevsk/Development/reconvillage-workshop/backend/src/websocket/server.ts`
+  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/websocket/server.ts`
   ```typescript
   import { Server as HttpServer } from 'http';
   import WebSocket, { WebSocketServer } from 'ws';
@@ -459,7 +459,7 @@ This step-by-step TDD implementation plan details the creation of the Express RE
 
 - [ ] **Step 2.3: Write WebSocket Server Tests (`backend/src/__tests__/websocket.test.ts`)**
 
-  File: `/Users/alevsk/Development/reconvillage-workshop/backend/src/__tests__/websocket.test.ts`
+  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/__tests__/websocket.test.ts`
   ```typescript
   import http from 'http';
   import WebSocket from 'ws';
@@ -558,7 +558,7 @@ This step-by-step TDD implementation plan details the creation of the Express RE
   `index.ts` must build ONE `http.Server`, attach the WS server to it, start the scheduler,
   and connect the scheduler's `onEntityUpdate` hook to the broadcaster.
 
-  File: `/Users/alevsk/Development/reconvillage-workshop/backend/src/index.ts`
+  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/index.ts`
   ```typescript
   import http from 'http';
   import path from 'path';

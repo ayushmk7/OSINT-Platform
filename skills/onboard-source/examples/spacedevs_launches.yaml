@@ -14,7 +14,7 @@ transport:
   method: GET
   headers:
     Accept: "application/json"
-    User-Agent: "reconvillage-workshop/1.0"
+    User-Agent: "vibe-coding-osint-platform/1.0"
   timeout: "15s"
   interval: "1800s"
   retry:
