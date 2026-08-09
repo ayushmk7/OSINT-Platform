@@ -1,0 +1,109 @@
+/*
+ * FLIR thermal (ironbow / white-hot) post-processing overlay.
+ *
+ * Z-INDEX CONTRACT (see App.tsx): globe 0 < cinematic overlays 10 < HUD/header 20 < drawers.
+ * Container is `inset: 0` inside the relative content box; every layer is
+ * `pointer-events: none` so the Cesium canvas underneath keeps full drag/zoom input.
+ */
+.flir-overlay-container {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  overflow: hidden;
+  pointer-events: none;
+  /*
+   * Deliberately NO `transform`/`will-change` here: either one turns this container into a
+   * "backdrop root", which silently makes the child `backdrop-filter` sample an empty backdrop
+   * instead of the Cesium canvas — the filter renders as a flat colour wash with no false-colour
+   * mapping at all. GPU promotion belongs on the animated leaf layers, not on this wrapper.
+   */
+}
+
+.flir-overlay-container > * {
+  position: absolute;
+  pointer-events: none;
+}
+
+/*
+ * Ironbow false colour, in two passes:
+ *  1. `.flir-thermal-tint` crushes the scene to luminance and re-maps the hot end of the ramp to
+ *     the crimson→orange→yellow→white half of the ironbow palette.
+ *  2. `.flir-cold-wash` screens a deep indigo over the result, lifting the cold (dark) end onto
+ *     the black→indigo→violet half of the palette.
+ */
+.flir-thermal-tint {
+  inset: 0;
+  /*
+   * `brightness` before the re-map: the basemap is near-black, so without a gain lift every pixel
+   * lands on the cold end and the frame reads as one flat wash. Lifting the ramp first puts land
+   * and markers on the crimson→orange→yellow half of the ironbow palette.
+   */
+  backdrop-filter: grayscale(100%) brightness(145%) contrast(150%) sepia(100%) saturate(500%)
+    hue-rotate(-25deg);
+  -webkit-backdrop-filter: grayscale(100%) brightness(145%) contrast(150%) sepia(100%)
+    saturate(500%) hue-rotate(-25deg);
+}
+
+/*
+ * A plain indigo veil pulls the cold (dark) end of the frame onto ironbow's violet shoulder.
+ * It must NOT use `mix-blend-mode`: a blended child isolates the container, which turns it into a
+ * backdrop root and silently kills the `backdrop-filter` above (verified — the whole pass
+ * collapsed back to a flat lavender wash).
+ */
+.flir-cold-wash {
+  inset: 0;
+  background: rgba(46, 0, 96, 0.16);
+}
+
+/* Sensor-edge falloff, keeps the frame from looking like a flat colour wash. */
+.flir-vignette {
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    rgba(0, 0, 0, 0.45) 88%,
+    rgba(0, 0, 0, 0.85) 100%
+  );
+}
+
+.flir-legend {
+  bottom: 32px;
+  right: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(255, 128, 0, 0.6);
+  padding: 8px 12px;
+  border-radius: 4px;
+  color: #ff9900;
+  font-family: monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.flir-gradient-bar {
+  width: 120px;
+  height: 12px;
+  margin: 4px 0;
+  /* Classic ironbow ramp: black → indigo → crimson → orange → yellow → white. */
+  background: linear-gradient(to right, #000033, #4b0082, #ff0000, #ff7f00, #ffff00, #ffffff);
+  border: 1px solid #444;
+}
+
+.flir-legend-scale {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.flir-status {
+  top: 24px;
+  left: 24px;
+  color: #ffb020;
+  font-family: monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 6px rgba(255, 128, 0, 0.8);
+  opacity: 0.9;
+}

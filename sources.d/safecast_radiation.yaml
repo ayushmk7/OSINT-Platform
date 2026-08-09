@@ -1,0 +1,44 @@
+schema_version: 1
+name: safecast_radiation
+source_type: safecast_radiation
+layer_type: radiation
+display_name: 'Safecast Radiation Monitoring'
+enabled: true
+
+transport:
+  type: http_poll
+  url: 'https://api.safecast.org/measurements.json?limit=100'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '15s'
+  interval: '300s'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '2s'
+    max_delay: '30s'
+
+parser:
+  format: json
+  max_records: 100
+
+entity:
+  external_id: 'id'
+  name: 'device_id'
+  category: 'radiation'
+  metadata:
+    cpm: 'value'
+    unit: 'unit'
+
+observation:
+  latitude: 'latitude'
+  longitude: 'longitude'
+  altitude: '0' # literal constant 0 (not a field named "0")
+  speed: '0'
+  heading: '0'
+  timestamp: 'captured_at'
+
+# Current-state sensors: one observation row per device measurement.
+recording:
+  mode: upsert

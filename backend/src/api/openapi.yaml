@@ -1,0 +1,156 @@
+openapi: 3.0.3
+info:
+  title: ReconVillage OSINT Platform API
+  description: RESTful API for querying telemetry sources, entities, and observations.
+  version: 1.0.0
+paths:
+  /api/sources:
+    get:
+      summary: List data sources
+      responses:
+        '200':
+          description: List of configured telemetry data sources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Source'
+                required: [sources]
+  /api/entities:
+    get:
+      summary: List tracked entities
+      parameters:
+        - in: query
+          name: category
+          schema:
+            type: string
+          description: Filter by category (e.g. aircraft, satellite, vessel)
+      responses:
+        '200':
+          description: List of tracked entities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+                  entities:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Entity'
+                required: [total, limit, offset, entities]
+  /api/observations:
+    get:
+      summary: List recorded observations
+      parameters:
+        - in: query
+          name: entity_id
+          schema:
+            type: string
+          description: Filter by entity ID
+      responses:
+        '200':
+          description: List of observations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+                  observations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Observation'
+                required: [total, limit, offset, observations]
+components:
+  schemas:
+    Source:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        transport:
+          type: string
+        url:
+          type: string
+        update_interval_sec:
+          type: integer
+        enabled:
+          type: boolean
+      required: [id, name, type, transport, url, update_interval_sec, enabled]
+    Entity:
+      type: object
+      properties:
+        id:
+          type: string
+        source_id:
+          type: string
+        category:
+          type: string
+        name:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        altitude:
+          type: number
+        timestamp:
+          type: string
+        metadata:
+          type: object
+      required: [id, source_id, category, name, latitude, longitude, timestamp]
+    Observation:
+      type: object
+      properties:
+        id:
+          type: string
+        entity_id:
+          type: string
+        source_id:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        altitude:
+          type: number
+        speed:
+          type: number
+        heading:
+          type: number
+        timestamp:
+          type: string
+        raw_payload:
+          type: object
+      required: [id, entity_id, source_id, latitude, longitude, timestamp]
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: integer
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+      required: [status, error, message]

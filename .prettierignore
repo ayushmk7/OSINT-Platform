@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+package-lock.json
+
+# Workshop kit content — authored prose/fixtures, not application source.
+README.md
+AGENTS.md
+CLAUDE.md
+RTK.md
+docs/
+example-docs/
+skills/
+debug/

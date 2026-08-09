@@ -1,0 +1,190 @@
+/*
+ * Night-vision (NVG) green-phosphor post-processing overlay.
+ *
+ * Z-INDEX CONTRACT (see App.tsx): globe 0 < cinematic overlays 10 < HUD/header 20 < drawers.
+ * Container is `inset: 0` inside the relative content box and every layer is
+ * `pointer-events: none`, so the Cesium canvas underneath keeps full drag/zoom input.
+ */
+.nvg-overlay-container {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  overflow: hidden;
+  pointer-events: none;
+  /*
+   * No `transform`/`will-change` on this wrapper: either one makes it a "backdrop root", which
+   * silently reduces the phosphor `backdrop-filter` below to a flat green wash (it would sample
+   * an empty backdrop instead of the globe). GPU promotion lives on the animated leaf layers.
+   */
+}
+
+.nvg-overlay-container > * {
+  position: absolute;
+  pointer-events: none;
+}
+
+/*
+ * P43 phosphor colour matrix: crush to luminance, boost gain, then map the whole luminance
+ * ramp onto the #00ff66 green channel. The flat green wash on top guarantees the monochrome
+ * look even where `backdrop-filter` is unsupported.
+ */
+.nvg-phosphor-tint {
+  inset: 0;
+  background: rgba(0, 255, 102, 0.1);
+  backdrop-filter: grayscale(100%) brightness(112%) contrast(122%) sepia(100%) hue-rotate(65deg)
+    saturate(420%);
+  -webkit-backdrop-filter: grayscale(100%) brightness(112%) contrast(122%) sepia(100%)
+    hue-rotate(65deg) saturate(420%);
+}
+
+/* Sensor gain noise — animated dot grain, no external asset. */
+.nvg-noise {
+  inset: -4px;
+  background-image:
+    repeating-radial-gradient(
+      circle at 20% 30%,
+      rgba(180, 255, 200, 0.16) 0 1px,
+      transparent 1px 3px
+    ),
+    repeating-radial-gradient(circle at 70% 60%, rgba(0, 255, 102, 0.13) 0 1px, transparent 1px 4px);
+  background-size:
+    3px 3px,
+    5px 5px;
+  animation: nvgGrain 0.45s steps(3) infinite;
+  will-change: background-position; /* GPU promotion on the animated leaf, not on the container */
+  opacity: 0.55;
+}
+
+/* Tactical grid / pitch ladder. */
+.nvg-grid {
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 255, 102, 0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 102, 0.11) 1px, transparent 1px);
+  background-size:
+    64px 64px,
+    64px 64px;
+}
+
+/* Circular objective-lens vignette. */
+.nvg-scope-vignette {
+  inset: 0;
+  background: radial-gradient(
+    circle at center,
+    transparent 45%,
+    rgba(0, 20, 6, 0.55) 78%,
+    rgba(0, 0, 0, 0.95) 100%
+  );
+}
+
+/*
+ * The reticles sit on top of a bright phosphor image, so they carry a dark drop-shadow —
+ * without it the #00ff66 HUD chrome disappears into the lit part of the globe.
+ */
+.nvg-reticle-corner {
+  width: 40px;
+  height: 40px;
+  border: 2px solid #00ff66;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.9));
+}
+
+.nvg-top-left {
+  top: 24px;
+  left: 24px;
+  border-right: none;
+  border-bottom: none;
+}
+
+.nvg-top-right {
+  top: 24px;
+  right: 24px;
+  border-left: none;
+  border-bottom: none;
+}
+
+.nvg-bottom-left {
+  bottom: 24px;
+  left: 24px;
+  border-right: none;
+  border-top: none;
+}
+
+.nvg-bottom-right {
+  bottom: 24px;
+  right: 24px;
+  border-left: none;
+  border-top: none;
+}
+
+.nvg-center-crosshair {
+  top: 50%;
+  left: 50%;
+  width: 60px;
+  height: 60px;
+  transform: translate(-50%, -50%);
+  opacity: 0.9;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.9));
+}
+
+.nvg-center-crosshair::before,
+.nvg-center-crosshair::after {
+  content: '';
+  position: absolute;
+  background: #00ff66;
+}
+
+.nvg-center-crosshair::before {
+  top: 29px;
+  left: 0;
+  width: 60px;
+  height: 2px;
+}
+
+.nvg-center-crosshair::after {
+  top: 0;
+  left: 29px;
+  width: 2px;
+  height: 60px;
+}
+
+.nvg-status {
+  bottom: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #00ff66;
+  font-family: monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  opacity: 0.8;
+  text-shadow: 0 0 6px rgba(0, 255, 102, 0.8);
+}
+
+@keyframes nvgGrain {
+  0% {
+    background-position:
+      0 0,
+      0 0;
+  }
+  33% {
+    background-position:
+      2px 1px,
+      -1px 2px;
+  }
+  66% {
+    background-position:
+      -1px 2px,
+      2px -1px;
+  }
+  100% {
+    background-position:
+      1px -2px,
+      -2px 1px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nvg-noise {
+    animation: none;
+  }
+}

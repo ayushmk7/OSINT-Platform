@@ -1,0 +1,113 @@
+/*
+ * Retro CRT post-processing overlay.
+ *
+ * Z-INDEX CONTRACT (see App.tsx): globe 0 < cinematic overlays 10 < HUD/header 20 < drawers.
+ * The container is `inset: 0` inside the relative content box (NOT 100vw/100vh — that would
+ * overflow past the header-offset container and add scrollbars), and every layer is
+ * `pointer-events: none` so drag/zoom always reaches the Cesium canvas underneath.
+ */
+.crt-overlay-container {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  overflow: hidden;
+  pointer-events: none;
+  /*
+   * GPU promotion goes on the animated leaf layers below, never on this wrapper: `transform`/
+   * `will-change` here would make the container a "backdrop root" and silently neuter any child
+   * `backdrop-filter` (the CRT pass keeps that option open and NVG/FLIR depend on it).
+   */
+}
+
+.crt-overlay-container > * {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Horizontal raster lines. */
+.crt-scanlines {
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.32),
+    rgba(0, 0, 0, 0.32) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+/* RGB aperture-grille mask — the chromatic aberration / colour-fringing of a shadow-mask tube. */
+.crt-chromatic {
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(255, 0, 0, 0.14) 0px,
+    rgba(255, 0, 0, 0.14) 1px,
+    rgba(0, 255, 0, 0.1) 1px,
+    rgba(0, 255, 0, 0.1) 2px,
+    rgba(0, 80, 255, 0.14) 2px,
+    rgba(0, 80, 255, 0.14) 3px
+  );
+  mix-blend-mode: screen;
+  opacity: 0.65;
+}
+
+/* Curved-glass vignette. */
+.crt-vignette {
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    rgba(0, 0, 0, 0.5) 85%,
+    rgba(0, 0, 0, 0.95) 100%
+  );
+}
+
+/* Phosphor refresh flicker. */
+.crt-flicker {
+  background: rgba(18, 16, 16, 0.06);
+  animation: crtFlicker 0.15s infinite;
+  will-change: opacity; /* GPU promotion on the animated leaf, not on the container */
+}
+
+/* Slow vertical roll bar — the tell-tale "out of sync" CRT sweep. */
+.crt-rolling-bar {
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.06) 45%,
+    rgba(255, 255, 255, 0.11) 50%,
+    rgba(255, 255, 255, 0.06) 55%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  height: 22%;
+  inset: auto 0 auto 0;
+  animation: crtRoll 7s linear infinite;
+  will-change: transform; /* GPU promotion on the animated leaf, not on the container */
+}
+
+@keyframes crtFlicker {
+  0% {
+    opacity: 0.82;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.88;
+  }
+}
+
+@keyframes crtRoll {
+  0% {
+    transform: translateY(-30%);
+  }
+  100% {
+    transform: translateY(560%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crt-flicker,
+  .crt-rolling-bar {
+    animation: none;
+  }
+}
