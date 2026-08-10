@@ -9,6 +9,7 @@ import { TelemetryStatsBanner } from './components/TelemetryStatsBanner';
 import { LayerControlDrawer } from './components/LayerControlDrawer';
 import { EntityDetailsDrawer } from './components/EntityDetailsDrawer';
 import { FilterModeSelector } from './components/FilterModeSelector';
+import { GlobeStyleSelector } from './components/GlobeStyleSelector';
 import { PerformanceControls } from './components/PerformanceControls';
 import { CrtOverlay } from './components/filters/CrtOverlay';
 import { NightVisionOverlay } from './components/filters/NightVisionOverlay';
@@ -72,6 +73,7 @@ export const App: FC = () => {
             messageRate={messageRate}
           />
           <FilterModeSelector />
+          <GlobeStyleSelector />
         </Toolbar>
       </AppBar>
 

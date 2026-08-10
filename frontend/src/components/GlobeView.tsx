@@ -16,19 +16,7 @@ import {
   zoneRadiusMeters,
   ATC_ZONE_CATEGORY
 } from './globeMarkers';
-
-// Real dark slippy-map basemap — NO API key required. Built by a factory because React
-// StrictMode double-invokes effects in dev. (Optional upgrade: set VITE_CESIUM_ION_TOKEN and
-// switch to Cesium Ion World Imagery instead.)
-function makeBaseLayer(): Cesium.ImageryLayer {
-  return new Cesium.ImageryLayer(
-    new Cesium.UrlTemplateImageryProvider({
-      url: 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}.png',
-      maximumLevel: 18,
-      credit: 'Stadia Maps, OpenMapTiles, OpenStreetMap'
-    })
-  );
-}
+import { GlobeStyleController } from './globeStyles';
 
 // Gentle idle rotation, in radians per clock tick (~60fps). Stops on first interaction.
 const SPIN_PER_TICK = 0.0015;
@@ -107,12 +95,14 @@ export const GlobeView: FC = () => {
   const sourcesLoaded = useAppSelector((s) => Object.keys(s.sources.sources).length > 0);
   const selectedId = useAppSelector((s) => s.entities.selectedEntityId);
   const lodEnabled = useAppSelector((s) => s.filter.lodEnabled);
+  const globeStyle = useAppSelector((s) => s.filter.globeStyle);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
   const billboardsRef = useRef<Cesium.BillboardCollection | null>(null);
   const byId = useRef<Map<string, Cesium.Billboard>>(new Map());
   const zonesById = useRef<Map<string, Cesium.Entity>>(new Map());
+  const globeStyleRef = useRef<GlobeStyleController | null>(null);
 
   // Mount once: create the viewer, the billboard layer, and the click handler.
   useEffect(() => {
@@ -120,7 +110,10 @@ export const GlobeView: FC = () => {
     let viewer: Cesium.Viewer;
     try {
       viewer = new Cesium.Viewer(containerRef.current, {
-        baseLayer: makeBaseLayer(),
+        // No boot imagery: the globe-style effect below owns every imagery layer, and it runs
+        // before the first paint. (`imageryProvider: false` is dead in Cesium 1.144 — the
+        // supported spelling is `baseLayer: false`.)
+        baseLayer: false,
         baseLayerPicker: false,
         timeline: false,
         animation: false,
@@ -149,6 +142,10 @@ export const GlobeView: FC = () => {
     const billboards = viewer.scene.primitives.add(new Cesium.BillboardCollection());
     billboardsRef.current = billboards;
     viewerRef.current = viewer;
+
+    // Owns the globe's base look. Constructed here so it can snapshot Cesium's pristine defaults
+    // off a freshly built viewer; the style effect below applies the selected look.
+    globeStyleRef.current = new GlobeStyleController(viewer);
 
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.canvas);
     handler.setInputAction((movement: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
@@ -187,11 +184,24 @@ export const GlobeView: FC = () => {
       handler.destroy();
       byId.current.clear();
       zonesById.current.clear(); // the Entities die with the viewer; drop the stale handles too
+      globeStyleRef.current?.destroy();
+      globeStyleRef.current = null;
       billboardsRef.current = null;
       viewerRef.current = null;
       if (!viewer.isDestroyed()) viewer.destroy();
     };
   }, [dispatch]);
+
+  // Globe base look. Runs on mount (so the viewer never paints a bare sphere) and on every
+  // switch. The controller swaps ONLY the imagery layers / style overlays it owns — the marker
+  // BillboardCollection, the ATC-zone Entities, the camera and the WebSocket feed are all
+  // untouched, which is why a style change cannot wipe live tracks.
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const controller = globeStyleRef.current;
+    if (!viewer || !controller || viewer.isDestroyed()) return;
+    void controller.apply(globeStyle);
+  }, [globeStyle]);
 
   // Level-of-detail toggle (step 5): render at 60% resolution and accept a coarser terrain/imagery
   // screen-space error, which is what buys back frame rate on low-end GPUs.

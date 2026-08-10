@@ -4,15 +4,18 @@ import filterReducer, {
   toggleFpsDisplay,
   toggleLod,
   updateFps,
+  setGlobeStyle,
   type FilterState
 } from '../filterSlice';
+import { GLOBE_STYLES } from '../../../components/globeStyles';
 
 describe('filterSlice Reducer', () => {
   const initialState: FilterState = {
     filterMode: 'none',
     fpsVisible: true,
     lodEnabled: false,
-    currentFps: 60
+    currentFps: 60,
+    globeStyle: 'tactical'
   };
 
   it('returns the default initial state', () => {
@@ -47,5 +50,21 @@ describe('filterSlice Reducer', () => {
 
   it('handles updateFps', () => {
     expect(filterReducer(initialState, updateFps(58)).currentFps).toBe(58);
+  });
+
+  it('handles setGlobeStyle for every globe style', () => {
+    let state = initialState;
+    for (const style of GLOBE_STYLES) {
+      state = filterReducer(state, setGlobeStyle(style));
+      expect(state.globeStyle).toBe(style);
+    }
+  });
+
+  it('leaves the cinematic filter mode alone when the globe style changes', () => {
+    // The two systems are orthogonal: a DOM overlay filter must survive a globe restyle.
+    const filtered = filterReducer(initialState, setFilterMode('night_vision'));
+    const restyled = filterReducer(filtered, setGlobeStyle('holographic'));
+    expect(restyled.filterMode).toBe('night_vision');
+    expect(restyled.globeStyle).toBe('holographic');
   });
 });
