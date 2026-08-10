@@ -2,8 +2,8 @@ import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
 /**
  * The shared category enum — must match the backend `ENTITY_CATEGORIES` strings exactly.
- * `atc_zone` has no bespoke globe silhouette yet, so it renders with the neutral fallback
- * marker; it is listed here so the type stays in sync with what the API can return.
+ * Every member has its own silhouette + color in `globeMarkers`; `atc_zone` additionally draws
+ * a control-zone circle on the globe, sized from its `radius_km` metadata.
  */
 export type EntityCategory =
   'satellite' | 'aircraft' | 'geological' | 'radiation' | 'maritime' | 'atc_zone';
@@ -27,6 +27,24 @@ export interface EntityRecord {
   timestamp: string;
   metadata?: string | Record<string, unknown>;
   trail?: TrailPoint[];
+}
+
+/**
+ * `metadata` arrives as a JSON string from SQLite (or, in tests/WS frames, as an object).
+ * Parse it defensively and always hand back a record: a malformed blob must never break a
+ * render — callers just see no fields.
+ */
+export function parseEntityMetadata(
+  metadata: string | Record<string, unknown> | undefined
+): Record<string, unknown> {
+  if (metadata === undefined || metadata === null) return {};
+  if (typeof metadata !== 'string') return metadata;
+  try {
+    const parsed: unknown = JSON.parse(metadata);
+    return parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
 export interface EntitiesState {

@@ -12,6 +12,7 @@ import { EntityDetailsDrawer } from '../EntityDetailsDrawer';
 import { setSelectedEntityId, upsertEntity } from '../../store/slices/entitiesSlice';
 import { setSources } from '../../store/slices/sourcesSlice';
 import { osintApi } from '../../store/api/osintApi';
+import { colorForCategory } from '../globeMarkers';
 
 const renderWithProviders = (ui: ReactElement) =>
   render(
@@ -68,6 +69,34 @@ describe('Tactical HUD Components', () => {
 
     await user.click(screen.getByRole('checkbox', { name: 'USGS Earthquakes' }));
     expect(store.getState().sources.enabledSourceIds).not.toContain('usgs_earthquakes');
+  });
+
+  it('LayerControlDrawer exposes ATC zones as a togglable layer with a swatch and count', async () => {
+    const user = userEvent.setup();
+    store.dispatch(
+      upsertEntity({
+        id: 'KJFK',
+        source_id: 'atc_facilities',
+        category: 'atc_zone',
+        name: 'John F Kennedy International Airport',
+        latitude: 40.6398,
+        longitude: -73.7789,
+        altitude: 0,
+        timestamp: new Date().toISOString(),
+        metadata: '{"radius_km":9}'
+      })
+    );
+
+    renderWithProviders(<LayerControlDrawer open={true} onClose={() => {}} />);
+    const atcButton = screen.getByRole('button', { name: /atc zone/i });
+    expect(atcButton).toBeInTheDocument();
+    // Count of loaded entities in this layer, alongside the color swatch.
+    expect(atcButton).toHaveTextContent('1');
+    // The swatch must use the real category color, not the neutral fallback.
+    expect(colorForCategory('atc_zone')).not.toBe('#9ca3af');
+
+    await user.click(atcButton);
+    expect(store.getState().entities.activeCategoryFilter).toBe('atc_zone');
   });
 });
 
@@ -135,6 +164,64 @@ describe('EntityDetailsDrawer', () => {
     await waitFor(() => expect(screen.getByText('91.5°')).toBeInTheDocument());
     expect(screen.getByText('7,660 kt')).toBeInTheDocument();
     expect(screen.getByText('OBSERVATION HISTORY (REST)')).toBeInTheDocument();
+  });
+
+  it('renders ATC zone metadata and a LiveATC link-out for an atc_zone entity', async () => {
+    // Same cache-seeding rationale as above — the drawer's observation query must not attempt a
+    // real HTTP round-trip under jsdom.
+    await store.dispatch(
+      osintApi.util.upsertQueryData(
+        'getObservations',
+        { entity_id: 'EGLL', limit: 25 },
+        { total: 0, limit: 25, offset: 0, observations: [] }
+      )
+    );
+    store.dispatch(
+      upsertEntity({
+        id: 'EGLL',
+        source_id: 'atc_facilities',
+        category: 'atc_zone',
+        name: 'London Heathrow Airport',
+        latitude: 51.4706,
+        longitude: -0.461941,
+        altitude: 0,
+        timestamp: new Date().toISOString(),
+        metadata: JSON.stringify({
+          icao: 'EGLL',
+          iata_code: 'LHR',
+          municipality: 'London',
+          airport_type: 'large_airport',
+          radius_km: 9,
+          zone_note: 'approximate control-zone radius, illustrative only',
+          liveatc_url: 'https://www.liveatc.net/search/?icao=egll'
+        })
+      })
+    );
+    store.dispatch(setSelectedEntityId('EGLL'));
+
+    renderWithProviders(<EntityDetailsDrawer />);
+    expect(screen.getByText('ATC CONTROL ZONE')).toBeInTheDocument();
+    expect(screen.getByText('London')).toBeInTheDocument();
+    expect(screen.getByText('large_airport')).toBeInTheDocument();
+    expect(screen.getByText('9 km')).toBeInTheDocument();
+    expect(
+      screen.getByText('approximate control-zone radius, illustrative only')
+    ).toBeInTheDocument();
+
+    // The point of the feature: a real link-out, opened in a new tab. NOT an embedded player —
+    // LiveATC's terms forbid third-party embedding of the streams themselves.
+    const link = screen.getByRole('link', { name: /listen to atc/i });
+    expect(link).toHaveAttribute('href', 'https://www.liveatc.net/search/?icao=egll');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(document.querySelector('audio')).toBeNull();
+  });
+
+  it('shows no ATC panel for a non-ATC entity', () => {
+    store.dispatch(setSelectedEntityId('test_sat'));
+    renderWithProviders(<EntityDetailsDrawer />);
+    expect(screen.queryByText('ATC CONTROL ZONE')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /listen to atc/i })).not.toBeInTheDocument();
   });
 
   it('renders nothing when no entity is selected', () => {

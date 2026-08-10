@@ -3,8 +3,19 @@ import { Box } from '@mui/material';
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { useAppDispatch, useAppSelector } from '../store';
-import { setSelectedEntityId } from '../store/slices/entitiesSlice';
-import { markerForCategory, bearingRad, isEntityVisible } from './globeMarkers';
+import {
+  setSelectedEntityId,
+  parseEntityMetadata,
+  type EntityRecord
+} from '../store/slices/entitiesSlice';
+import {
+  markerForCategory,
+  bearingRad,
+  isEntityVisible,
+  colorForCategory,
+  zoneRadiusMeters,
+  ATC_ZONE_CATEGORY
+} from './globeMarkers';
 
 // Real dark slippy-map basemap — NO API key required. Built by a factory because React
 // StrictMode double-invokes effects in dev. (Optional upgrade: set VITE_CESIUM_ION_TOKEN and
@@ -26,6 +37,65 @@ const SPIN_PER_TICK = 0.0015;
 const MARKER_BASE_SCALE = 0.5;
 const SELECTED_SCALE_BOOST = 1.5;
 
+// ATC control zones are real ground geometry, not billboards: a 5–9 km circle has to grow and
+// shrink with the camera exactly like the terrain under it, which a screen-space billboard
+// cannot do. They live in `viewer.entities` (Cesium's Entity API) ALONGSIDE the
+// BillboardCollection, in this same viewer — the tower billboard still marks the centre.
+const ZONE_FILL_ALPHA = 0.18;
+const ZONE_SELECTED_FILL_ALPHA = 0.38;
+const ZONE_OUTLINE_ALPHA = 0.95;
+
+/** Zone tint: the same violet as the atc_zone marker + layer swatch, so the legend reads true. */
+function zoneColor(alpha: number): Cesium.Color {
+  return Cesium.Color.fromCssColorString(colorForCategory(ATC_ZONE_CATEGORY)).withAlpha(alpha);
+}
+
+/**
+ * Create/update the control-zone circle for one ATC entity.
+ *
+ * `height: 0` (rather than a ground-clamped ellipse) is deliberate: a classification-clamped
+ * ellipse cannot draw an outline, and the outline is what makes a 5 km circle legible against
+ * the dark basemap. The Cesium Entity's own `id` is the entity id, so a click on the shape
+ * picks exactly what a click on the billboard does.
+ */
+function upsertZone(
+  viewer: Cesium.Viewer,
+  zones: Map<string, Cesium.Entity>,
+  entity: EntityRecord,
+  isSelected: boolean
+): void {
+  const radius = zoneRadiusMeters(parseEntityMetadata(entity.metadata).radius_km);
+  const position = Cesium.Cartesian3.fromDegrees(entity.longitude, entity.latitude, 0);
+  const fill = zoneColor(isSelected ? ZONE_SELECTED_FILL_ALPHA : ZONE_FILL_ALPHA);
+
+  let zone = zones.get(entity.id);
+  if (!zone) {
+    zone = viewer.entities.add({
+      id: entity.id,
+      position,
+      ellipse: {
+        semiMajorAxis: radius,
+        semiMinorAxis: radius,
+        height: 0,
+        material: new Cesium.ColorMaterialProperty(fill),
+        outline: true,
+        outlineColor: zoneColor(ZONE_OUTLINE_ALPHA),
+        outlineWidth: 2
+      }
+    });
+    zones.set(entity.id, zone);
+    return;
+  }
+
+  zone.position = new Cesium.ConstantPositionProperty(position);
+  zone.show = true;
+  if (zone.ellipse) {
+    zone.ellipse.material = new Cesium.ColorMaterialProperty(fill);
+    zone.ellipse.semiMajorAxis = new Cesium.ConstantProperty(radius);
+    zone.ellipse.semiMinorAxis = new Cesium.ConstantProperty(radius);
+  }
+}
+
 export const GlobeView: FC = () => {
   const dispatch = useAppDispatch();
   const entities = useAppSelector((s) => s.entities.entities);
@@ -42,6 +112,7 @@ export const GlobeView: FC = () => {
   const viewerRef = useRef<Cesium.Viewer | null>(null);
   const billboardsRef = useRef<Cesium.BillboardCollection | null>(null);
   const byId = useRef<Map<string, Cesium.Billboard>>(new Map());
+  const zonesById = useRef<Map<string, Cesium.Entity>>(new Map());
 
   // Mount once: create the viewer, the billboard layer, and the click handler.
   useEffect(() => {
@@ -83,9 +154,16 @@ export const GlobeView: FC = () => {
     handler.setInputAction((movement: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
       const picked: unknown = viewer.scene.pick(movement.position);
       const pickedId = (picked as { id?: unknown } | undefined)?.id;
-      if (typeof pickedId === 'string') {
-        dispatch(setSelectedEntityId(pickedId)); // billboard.id holds the entity id
-      }
+      // A billboard pick hands back `billboard.id` (the entity id string); an ATC zone ellipse
+      // hands back the Cesium Entity itself, whose own `.id` is that same string. Either way the
+      // click selects the entity and opens the inspector.
+      const entityId =
+        typeof pickedId === 'string'
+          ? pickedId
+          : pickedId instanceof Cesium.Entity && typeof pickedId.id === 'string'
+            ? pickedId.id
+            : null;
+      if (entityId) dispatch(setSelectedEntityId(entityId));
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     // Idle "attract mode": spin slowly until the user grabs the globe, then stop so panning and
@@ -108,6 +186,7 @@ export const GlobeView: FC = () => {
       viewer.clock.onTick.removeEventListener(onTick);
       handler.destroy();
       byId.current.clear();
+      zonesById.current.clear(); // the Entities die with the viewer; drop the stale handles too
       billboardsRef.current = null;
       viewerRef.current = null;
       if (!viewer.isDestroyed()) viewer.destroy();
@@ -157,6 +236,11 @@ export const GlobeView: FC = () => {
       }
       bb.scale = (entity.id === selectedId ? SELECTED_SCALE_BOOST : 1.0) * MARKER_BASE_SCALE;
 
+      // ATC facilities additionally get their control-zone circle drawn on the globe.
+      if (entity.category === ATC_ZONE_CATEGORY) {
+        upsertZone(viewer, zonesById.current, entity, entity.id === selectedId);
+      }
+
       // Aircraft & ships: rotate to travel heading derived from the last two trail points.
       // (Both silhouettes point north, so the same rotation applies.)
       if (
@@ -173,6 +257,11 @@ export const GlobeView: FC = () => {
 
     for (const [id, bb] of map) {
       if (!visibleIds.has(id)) bb.show = false;
+    }
+    // Zones follow the same layer/source filters as their marker — hide, never remove, so a
+    // re-enabled layer costs nothing to bring back.
+    for (const [id, zone] of zonesById.current) {
+      if (!visibleIds.has(id)) zone.show = false;
     }
     viewer.scene.requestRender();
   }, [entities, activeCategory, enabledSources, sourcesLoaded, selectedId]);

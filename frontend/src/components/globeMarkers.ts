@@ -141,6 +141,34 @@ function drawShipIcon(ctx: CanvasRenderingContext2D, color: string): void {
   ctx.fill();
 }
 
+// atc_zone — airport control tower: antenna mast, glazed cab, shaft, splayed base.
+// Marks the CENTRE of the control-zone circle drawn by GlobeView, and is what the user clicks.
+function drawATCTowerIcon(ctx: CanvasRenderingContext2D, color: string): void {
+  ctx.fillStyle = color;
+  ctx.fillRect(CX - 0.75, 2, 1.5, 7); // antenna mast
+  ctx.beginPath(); // cab, wider at the top than the shaft
+  ctx.moveTo(CX - 7, 9);
+  ctx.lineTo(CX + 7, 9);
+  ctx.lineTo(CX + 5, 15);
+  ctx.lineTo(CX - 5, 15);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillRect(CX - 3, 15, 6, 10); // shaft
+  ctx.beginPath(); // splayed base
+  ctx.moveTo(CX - 8, 29);
+  ctx.lineTo(CX - 5, 25);
+  ctx.lineTo(CX + 5, 25);
+  ctx.lineTo(CX + 8, 29);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#000000'; // glazed window band — the embossed inset cutout
+  ctx.fillRect(CX - 5, 10.5, 10, 3.5);
+  ctx.fillStyle = color;
+  ctx.beginPath(); // beacon dot inside the cab
+  ctx.arc(CX, 12.25, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 // fallback — filled dot
 function drawDefaultIcon(ctx: CanvasRenderingContext2D, color: string): void {
   ctx.fillStyle = color;
@@ -159,7 +187,10 @@ const STYLE: Record<string, MarkerStyle> = {
   aircraft: { draw: drawFlightIcon, color: '#ffaa00' },
   geological: { draw: drawEarthquakeIcon, color: '#ff0055' },
   radiation: { draw: drawRadiationIcon, color: '#ffcc00' },
-  maritime: { draw: drawShipIcon, color: '#4fc3f7' }
+  maritime: { draw: drawShipIcon, color: '#4fc3f7' },
+  // violet — the one unclaimed slot in the tactical palette (cyan / amber / red / yellow /
+  // light-blue are taken), and far enough from the neutral fallback grey to read as a real layer.
+  atc_zone: { draw: drawATCTowerIcon, color: '#b388ff' }
 };
 const FALLBACK: MarkerStyle = { draw: drawDefaultIcon, color: '#9ca3af' };
 
@@ -224,6 +255,27 @@ export function isEntityVisible(
   if (activeCategory && entity.category !== activeCategory) return false;
   if (!sourcesLoaded) return true;
   return enabledSourceIds.includes(entity.source_id);
+}
+
+/** The one category drawn as ground geometry (a circle) as well as a billboard. */
+export const ATC_ZONE_CATEGORY = 'atc_zone';
+
+/** Radius used when an ATC facility carries no usable `radius_km`, in km. */
+export const DEFAULT_ZONE_RADIUS_KM = 5;
+
+/**
+ * `radius_km` metadata → ellipse radius in METRES for Cesium.
+ *
+ * The value arrives from a JSON metadata blob, so it may be a number, a numeric string, or
+ * missing entirely; anything unusable falls back to the medium-airport radius rather than
+ * producing a zero-size (invisible) or NaN (crashing) ellipse.
+ *
+ * NOTE: these circles are an illustrative stand-in sized by airport class — they are NOT real
+ * airspace boundaries (see `zone_note` in the metadata).
+ */
+export function zoneRadiusMeters(radiusKm: unknown): number {
+  const km = typeof radiusKm === 'number' ? radiusKm : Number(radiusKm);
+  return (Number.isFinite(km) && km > 0 ? km : DEFAULT_ZONE_RADIUS_KM) * 1000;
 }
 
 /** Bearing (radians, clockwise from north) between two lat/lon points — for heading rotation. */

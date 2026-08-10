@@ -1,4 +1,4 @@
-import type { FC } from 'react';
+import { useMemo, type FC } from 'react';
 import {
   Drawer,
   Box,
@@ -26,6 +26,17 @@ export const LayerControlDrawer: FC<LayerControlDrawerProps> = ({ open, onClose 
   const sources = useAppSelector((state) => state.sources.sources);
   const enabledSourceIds = useAppSelector((state) => state.sources.enabledSourceIds);
   const activeCategory = useAppSelector((state) => state.entities.activeCategoryFilter);
+  const entities = useAppSelector((state) => state.entities.entities);
+
+  // Live per-layer counts, so a layer that is on but empty is visibly different from one that
+  // is simply switched off.
+  const counts = useMemo(() => {
+    const tally: Record<string, number> = {};
+    for (const ent of Object.values(entities)) {
+      tally[ent.category] = (tally[ent.category] ?? 0) + 1;
+    }
+    return tally;
+  }, [entities]);
 
   return (
     <Drawer
@@ -84,7 +95,13 @@ export const LayerControlDrawer: FC<LayerControlDrawerProps> = ({ open, onClose 
                   flexShrink: 0
                 }}
               />
-              {cat}
+              {cat.replace(/_/g, ' ')}
+              <Box
+                component="span"
+                sx={{ ml: 'auto', pl: 1, color: '#9ca3af', fontSize: '0.7rem' }}
+              >
+                {counts[cat] ?? 0}
+              </Box>
             </Button>
           ))}
         </ButtonGroup>
