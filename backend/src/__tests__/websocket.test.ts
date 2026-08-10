@@ -6,7 +6,10 @@ import { setupWebSocketServer, WS_PATH } from '../websocket/server';
 import { broadcaster } from '../websocket/broadcaster';
 import { initDatabase, closeDatabase } from '../db/database';
 
-const ALL_CATEGORIES = ['satellite', 'aircraft', 'geological', 'radiation', 'maritime'];
+import { ENTITY_CATEGORIES } from '../engine/yaml-loader';
+
+/** The canonical enum, so a new category cannot silently escape the snapshot test. */
+const ALL_CATEGORIES: readonly string[] = ENTITY_CATEGORIES;
 
 let db: Database.Database;
 let server: http.Server;
@@ -126,12 +129,12 @@ describe('WebSocket Telemetry Server', () => {
     const msg = await nextMessage(ws, 'initial_state');
 
     const categories = new Set(msg.data.entities.map((e: { category: string }) => e.category));
-    // Despite 1000 fresher aircraft rows, the other four categories must still appear.
+    // Despite 1000 fresher aircraft rows, every other category must still appear.
     for (const c of ALL_CATEGORIES) {
       expect(categories.has(c)).toBe(true);
     }
-    // Capped at 300 aircraft + 1 of each remaining category.
-    expect(msg.data.entities.length).toBe(304);
+    // Capped at 300 aircraft + exactly 1 of each remaining category.
+    expect(msg.data.entities.length).toBe(300 + (ALL_CATEGORIES.length - 1));
   });
 
   it('broadcasts entity_update frames to connected clients', async () => {

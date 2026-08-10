@@ -2,6 +2,54 @@ import fs from 'fs';
 import path from 'path';
 import YAML from 'yaml';
 
+/**
+ * The canonical `entities.category` enum. This is the ONE place the list lives on the
+ * backend — source YAML, the tests and the frontend union all mirror these exact strings.
+ */
+export const ENTITY_CATEGORIES = [
+  'satellite',
+  'aircraft',
+  'geological',
+  'radiation',
+  'maritime',
+  'atc_zone'
+] as const;
+
+export type EntityCategory = (typeof ENTITY_CATEGORIES)[number];
+
+export function isEntityCategory(value: unknown): value is EntityCategory {
+  return typeof value === 'string' && (ENTITY_CATEGORIES as readonly string[]).includes(value);
+}
+
+/**
+ * One record-level predicate from a source's `filter:` list. Every rule must hold for a raw
+ * record to reach the mapper; a record that fails is dropped BEFORE mapping, so it is not
+ * counted as a malformed record.
+ */
+export interface FilterRule {
+  /** Path into the raw record, same syntax as the entity/observation mappings. */
+  field: string;
+  /** Value must be one of these (string-compared). */
+  in?: Array<string | number>;
+  /** Value must be present and not an empty/whitespace-only string. */
+  not_empty?: boolean;
+}
+
+/**
+ * A metadata field COMPUTED from the raw record rather than copied out of it. Kept
+ * declarative so per-source logic never leaks into TypeScript. Exactly one of `map` or
+ * `template` is used:
+ *   - `map`: exact-match lookup of the `from` value, falling back to `default`.
+ *   - `template`: literal text with `{path}` / `{path|lower}` / `{path|upper}` placeholders.
+ */
+export interface DerivedField {
+  /** Path whose value drives the `map` lookup. */
+  from?: string;
+  map?: Record<string, string | number>;
+  default?: string | number;
+  template?: string;
+}
+
 export interface SourceConfig {
   schema_version?: number;
   name: string;
@@ -28,11 +76,15 @@ export interface SourceConfig {
     records_path?: string;
     max_records?: number;
   };
+  /** Record-level predicates; ALL must hold. Absent = every record is accepted. */
+  filter?: FilterRule[];
   entity: {
     external_id: string;
     name: string;
     category?: string;
     metadata?: Record<string, string>;
+    /** Metadata computed by the mapper instead of copied from the record. */
+    derived?: Record<string, DerivedField>;
   };
   observation: {
     latitude: string;
@@ -112,6 +164,15 @@ export function loadSourcesFromDir(dirPath: string): SourceConfig[] {
       const fileContent = fs.readFileSync(filePath, 'utf8');
       const parsed = YAML.parse(fileContent);
       if (isValidConfig(parsed)) {
+        // A non-canonical category still loads (the engine is data-driven and must not
+        // hard-fail on a new layer), but it is surfaced loudly because the frontend has no
+        // marker for it.
+        if (parsed.entity.category !== undefined && !isEntityCategory(parsed.entity.category)) {
+          console.warn(
+            `Source ${parsed.name}: non-canonical entity.category "${parsed.entity.category}" ` +
+              `(expected one of: ${ENTITY_CATEGORIES.join(', ')})`
+          );
+        }
         configs.push(parsed);
       } else {
         console.warn(`Skipping invalid source definition (missing required fields): ${filePath}`);

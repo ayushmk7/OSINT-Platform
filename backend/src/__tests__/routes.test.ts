@@ -145,3 +145,88 @@ describe('REST API Routes', () => {
     expect(miss.body.observations.length).toBe(0);
   });
 });
+
+describe('REST API — atc_zone entities', () => {
+  let db: Database.Database;
+  let app: ReturnType<typeof createApp>;
+
+  beforeAll(() => {
+    db = initDatabase(':memory:');
+    db.prepare(
+      `INSERT INTO sources (id, name, type, transport, url, update_interval_sec, enabled)
+       VALUES ('atc_facilities', 'ATC Facilities', 'ourairports', 'http_poll',
+               'https://davidmegginson.github.io/ourairports-data/airports.csv', 86400, 1)`
+    ).run();
+
+    const insertEntity = db.prepare(
+      `INSERT INTO entities (id, source_id, category, name, latitude, longitude, altitude, timestamp, metadata)
+       VALUES (?, 'atc_facilities', 'atc_zone', ?, ?, ?, 0, '2026-08-08T00:00:00Z', ?)`
+    );
+    insertEntity.run(
+      'EGLL',
+      'London Heathrow Airport',
+      51.4706,
+      -0.461941,
+      JSON.stringify({
+        icao: 'EGLL',
+        iata_code: 'LHR',
+        municipality: 'London',
+        airport_type: 'large_airport',
+        radius_km: 9,
+        zone_note: 'approximate control-zone radius, illustrative only',
+        liveatc_url: 'https://www.liveatc.net/search/?icao=egll'
+      })
+    );
+    insertEntity.run(
+      'EGPE',
+      'Inverness Airport',
+      57.5425,
+      -4.0475,
+      JSON.stringify({
+        icao: 'EGPE',
+        iata_code: 'INV',
+        municipality: 'Inverness',
+        airport_type: 'medium_airport',
+        radius_km: 5,
+        zone_note: 'approximate control-zone radius, illustrative only',
+        liveatc_url: 'https://www.liveatc.net/search/?icao=egpe'
+      })
+    );
+    insertEntity.run('ent_sat', 'ISS', 45.0, 10.0, '{}');
+    db.prepare(`UPDATE entities SET category = 'satellite' WHERE id = 'ent_sat'`).run();
+
+    app = createApp(db);
+  });
+
+  afterAll(() => {
+    closeDatabase(db);
+  });
+
+  it('GET /api/entities?category=atc_zone returns only ATC zones', async () => {
+    const res = await request(app).get('/api/entities?category=atc_zone');
+    expect(res.status).toBe(200);
+    expect(res.body.entities.length).toBe(2);
+    expect(res.body.entities.every((e: { category: string }) => e.category === 'atc_zone')).toBe(
+      true
+    );
+  });
+
+  it('carries radius_km, zone_note and a LiveATC search link in metadata', async () => {
+    const res = await request(app).get('/api/entities?category=atc_zone');
+    const byId = Object.fromEntries(
+      res.body.entities.map((e: { id: string; metadata: string }) => [e.id, JSON.parse(e.metadata)])
+    );
+
+    expect(byId.EGLL.radius_km).toBe(9);
+    expect(byId.EGPE.radius_km).toBe(5);
+    expect(byId.EGLL.liveatc_url).toBe('https://www.liveatc.net/search/?icao=egll');
+    expect(byId.EGPE.liveatc_url).toBe('https://www.liveatc.net/search/?icao=egpe');
+
+    for (const meta of Object.values(byId) as Record<string, unknown>[]) {
+      expect(meta.zone_note).toBe('approximate control-zone radius, illustrative only');
+      // Compliance guard: search-page link-out only, never an embedded audio stream.
+      expect(String(meta.liveatc_url)).toMatch(/^https:\/\/www\.liveatc\.net\/search\/\?icao=/);
+      expect(String(meta.liveatc_url)).not.toMatch(/\.pls|\.m3u|\.mp3/i);
+    }
+  });
+});

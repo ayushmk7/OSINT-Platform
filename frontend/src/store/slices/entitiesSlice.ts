@@ -1,7 +1,12 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-/** The shared category enum — must match the backend/YAML strings exactly. */
-export type EntityCategory = 'satellite' | 'aircraft' | 'geological' | 'radiation' | 'maritime';
+/**
+ * The shared category enum — must match the backend `ENTITY_CATEGORIES` strings exactly.
+ * `atc_zone` has no bespoke globe silhouette yet, so it renders with the neutral fallback
+ * marker; it is listed here so the type stays in sync with what the API can return.
+ */
+export type EntityCategory =
+  'satellite' | 'aircraft' | 'geological' | 'radiation' | 'maritime' | 'atc_zone';
 
 export interface TrailPoint {
   latitude: number;

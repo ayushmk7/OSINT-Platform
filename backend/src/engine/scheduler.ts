@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { fetchUrl } from './http-fetcher';
-import { EntityRecord, mapRecord } from './field-mapper';
+import { EntityRecord, mapRecord, passesFilter } from './field-mapper';
 import { parsePayload } from './parsers';
 import { SourceConfig, loadSourcesFromDir, parseDurationSeconds } from './yaml-loader';
 
@@ -129,11 +129,20 @@ export class IngestionScheduler {
 
       let written = 0;
       let skipped = 0;
+      let filtered = 0;
       const touchedEntities = new Set<string>();
       const changedEntities: EntityRecord[] = []; // new or moved -> broadcast after commit
 
       const transaction = this.db.transaction(() => {
         for (const raw of rawRecords) {
+          // Source-declared predicates run BEFORE mapping: a deliberately excluded record
+          // (e.g. a heliport in an airports feed) is not a malformed one, so it is counted
+          // separately and never inflates the "missing id/coordinates" warning.
+          if (!passesFilter(raw, config.filter)) {
+            filtered++;
+            continue;
+          }
+
           const mapped = mapRecord(raw, config, config.name);
           if (!mapped) {
             skipped++; // no identity or no valid coordinates — never plotted at (0,0)
@@ -198,6 +207,9 @@ export class IngestionScheduler {
         console.warn(
           `Source ${config.name}: skipped ${skipped} record(s) with missing id/coordinates`
         );
+      }
+      if (filtered > 0) {
+        console.log(`Source ${config.name}: ${filtered} record(s) excluded by filter rules`);
       }
       return written;
     } catch (err) {

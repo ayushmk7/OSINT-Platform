@@ -1,4 +1,4 @@
-import { SourceConfig } from './yaml-loader';
+import { DerivedField, FilterRule, SourceConfig } from './yaml-loader';
 
 export interface EntityRecord {
   id: string;
@@ -51,6 +51,100 @@ export function resolveValue(obj: unknown, expr?: string): unknown {
     return Number(expr); // literal number
   }
   return undefined;
+}
+
+/** A value counts as "present" when it is not null/undefined and not a blank string. */
+function isPresent(v: unknown): boolean {
+  if (v === null || v === undefined) return false;
+  return String(v).trim() !== '';
+}
+
+/**
+ * Record-level predicate gate. Returns true when EVERY rule holds (an absent/empty rule list
+ * accepts everything). Applied by the scheduler BEFORE `mapRecord`, so records a source
+ * deliberately excludes are never confused with malformed ones.
+ */
+export function passesFilter(raw: unknown, rules?: FilterRule[]): boolean {
+  if (!rules || rules.length === 0) return true;
+
+  for (const rule of rules) {
+    const value = resolvePath(raw, rule.field);
+
+    if (rule.not_empty === true && !isPresent(value)) return false;
+
+    if (rule.in) {
+      if (!isPresent(value)) return false;
+      const asString = String(value).trim();
+      if (!rule.in.some((candidate) => String(candidate) === asString)) return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Expand `{path}` / `{path|lower}` / `{path|upper}` placeholders against the raw record.
+ * Returns undefined if ANY placeholder is missing/blank, so a half-built value (e.g. a URL
+ * with a hole where the ICAO code should be) is never emitted.
+ */
+export function applyTemplate(raw: unknown, template: string): string | undefined {
+  let missing = false;
+
+  const out = template.replace(
+    /\{([^{}|]+)(?:\|(lower|upper))?\}/g,
+    (_match, pathStr, modifier) => {
+      const value = resolvePath(raw, String(pathStr).trim());
+      if (!isPresent(value)) {
+        missing = true;
+        return '';
+      }
+      const text = String(value).trim();
+      if (modifier === 'lower') return text.toLowerCase();
+      if (modifier === 'upper') return text.toUpperCase();
+      return text;
+    }
+  );
+
+  return missing ? undefined : out;
+}
+
+/**
+ * Compute the `entity.derived` metadata block. Each field is either a `map` lookup keyed on
+ * `from` (falling back to `default`) or a `template` string. A field that cannot be resolved
+ * is OMITTED rather than written as null, so consumers can test presence.
+ */
+export function computeDerived(
+  raw: unknown,
+  derived?: Record<string, DerivedField>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!derived) return out;
+
+  for (const [key, spec] of Object.entries(derived)) {
+    if (!spec) continue;
+
+    if (spec.map) {
+      const lookup = resolvePath(raw, spec.from);
+      const hit = isPresent(lookup) ? spec.map[String(lookup).trim()] : undefined;
+      const value = hit !== undefined ? hit : spec.default;
+      if (value !== undefined) out[key] = value;
+      continue;
+    }
+
+    if (spec.template !== undefined) {
+      const value = applyTemplate(raw, spec.template);
+      if (value !== undefined) out[key] = value;
+      else if (spec.default !== undefined) out[key] = spec.default;
+      continue;
+    }
+
+    // No `map` and no `template`: a plain copy of `from`, with an optional default.
+    const copied = resolvePath(raw, spec.from);
+    if (isPresent(copied)) out[key] = copied;
+    else if (spec.default !== undefined) out[key] = spec.default;
+  }
+
+  return out;
 }
 
 function toNumber(v: unknown): number {
@@ -129,6 +223,8 @@ export function mapRecord(
       metadata[key] = resolveValue(raw, expr);
     }
   }
+  // Derived fields are computed from the raw record and win over a 1:1 copy of the same key.
+  Object.assign(metadata, computeDerived(raw, config.entity.derived));
 
   const entity: EntityRecord = {
     id: extId,

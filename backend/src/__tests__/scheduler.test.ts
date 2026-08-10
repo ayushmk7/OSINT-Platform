@@ -31,6 +31,10 @@ const appendConfig: SourceConfig = {
   recording: { mode: 'append' }
 };
 
+async function pollOnce(db: Database.Database, config: SourceConfig): Promise<number> {
+  return new IngestionScheduler(db, '/x').pollSource(config);
+}
+
 describe('Ingestion Scheduler', () => {
   let db: Database.Database;
 
@@ -199,6 +203,96 @@ describe('Ingestion Scheduler', () => {
     const obs = (db.prepare('SELECT COUNT(*) AS c FROM observations').get() as any).c;
     expect(obs).toBeLessThanOrEqual(200);
     expect(obs).toBeGreaterThan(0);
+  });
+
+  it('applies YAML filter rules and derived metadata end-to-end for a CSV source', async () => {
+    db.prepare(
+      `INSERT INTO sources (id, name, type, transport, url, update_interval_sec, enabled)
+       VALUES ('atc_facilities', 'ATC', 'ourairports', 'http_poll', 'http://x', 86400, 1)`
+    ).run();
+
+    const atcConfig: SourceConfig = {
+      name: 'atc_facilities',
+      source_type: 'ourairports',
+      layer_type: 'atc_zones',
+      display_name: 'ATC Facilities',
+      transport: { type: 'http_poll', url: 'http://x', interval: '24h' },
+      parser: { format: 'csv', max_records: 100000 },
+      filter: [
+        { field: 'type', in: ['large_airport', 'medium_airport'] },
+        { field: 'icao_code', not_empty: true }
+      ],
+      entity: {
+        external_id: 'icao_code',
+        name: 'name',
+        category: 'atc_zone',
+        metadata: { icao: 'icao_code', iata_code: 'iata_code', airport_type: 'type' },
+        derived: {
+          radius_km: { from: 'type', map: { large_airport: 9, medium_airport: 5 }, default: 5 },
+          zone_note: { template: 'approximate control-zone radius, illustrative only' },
+          liveatc_url: { template: 'https://www.liveatc.net/search/?icao={icao_code|lower}' }
+        }
+      },
+      observation: { latitude: 'latitude_deg', longitude: 'longitude_deg', altitude: '0' },
+      recording: { mode: 'upsert' }
+    };
+
+    // Real OurAirports column layout: two keepers, plus a heliport, a closed field and a
+    // large_airport with no ICAO code — all three must be filtered out.
+    const csv = [
+      '"id","type","name","latitude_deg","longitude_deg","municipality","icao_code","iata_code"',
+      '1,"large_airport","London Heathrow Airport",51.4706,-0.461941,"London","EGLL","LHR"',
+      '2,"medium_airport","Inverness Airport",57.5425,-4.0475,"Inverness","EGPE","INV"',
+      '3,"heliport","Some Heliport",10.0,10.0,"Nowhere","XXXX",""',
+      '4,"closed","Closed Field",11.0,11.0,"Nowhere","YYYY",""',
+      '5,"large_airport","No ICAO Airport",12.0,12.0,"Nowhere","",""'
+    ].join('\n');
+    mockFetch.mockResolvedValue(csv);
+
+    const scheduler = new IngestionScheduler(db, '/x');
+    const written = await scheduler.pollSource(atcConfig);
+    expect(written).toBe(2);
+
+    const rows = db
+      .prepare('SELECT * FROM entities WHERE category = ? ORDER BY id')
+      .all('atc_zone') as any[];
+    expect(rows.map((r) => r.id)).toEqual(['EGLL', 'EGPE']);
+
+    const heathrow = JSON.parse(rows[0].metadata);
+    expect(heathrow.radius_km).toBe(9);
+    expect(heathrow.liveatc_url).toBe('https://www.liveatc.net/search/?icao=egll');
+    expect(heathrow.zone_note).toBe('approximate control-zone radius, illustrative only');
+    expect(heathrow.icao).toBe('EGLL');
+    expect(heathrow.iata_code).toBe('LHR');
+
+    expect(JSON.parse(rows[1].metadata).radius_km).toBe(5);
+    expect(JSON.parse(rows[1].metadata).liveatc_url).toBe(
+      'https://www.liveatc.net/search/?icao=egpe'
+    );
+
+    // Static reference data -> upsert: re-polling never grows the observation table.
+    await scheduler.pollSource(atcConfig);
+    const obs = (db.prepare('SELECT COUNT(*) AS c FROM observations').get() as any).c;
+    expect(obs).toBe(2);
+  });
+
+  it('does not report filtered-out records as malformed', async () => {
+    insertTestSource(db);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const filteredConfig: SourceConfig = {
+      ...appendConfig,
+      filter: [{ field: 'keep', in: ['yes'] }]
+    };
+
+    mockFetch.mockResolvedValue(
+      JSON.stringify([
+        { id: 'a', keep: 'yes', lat: 1, lon: 2, ts: 1700000000000 },
+        { id: 'b', keep: 'no', lat: 3, lon: 4, ts: 1700000000000 }
+      ])
+    );
+    expect(await pollOnce(db, filteredConfig)).toBe(1);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('start() polls immediately and stop() clears every timer', async () => {

@@ -1,0 +1,77 @@
+schema_version: 1
+name: atc_facilities
+source_type: ourairports
+layer_type: atc_zones
+display_name: 'ATC Facilities (OurAirports)'
+enabled: true
+
+# Static reference data, not live telemetry: the airport register changes on the order of
+# weeks, so this polls daily rather than on the minute.
+transport:
+  type: http_poll
+  url: 'https://davidmegginson.github.io/ourairports-data/airports.csv'
+  method: GET
+  headers:
+    Accept: 'text/csv'
+  timeout: '60s'
+  interval: '24h'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '2s'
+    max_delay: '30s'
+
+parser:
+  format: csv
+  # The full register is ~85k rows; the filter below cuts it to ~4.7k controlled fields.
+  max_records: 100000
+
+# Record-level predicates, ALL must hold. Applied before mapping, so the 80k excluded rows
+# are not reported as malformed records.
+filter:
+  - field: 'type'
+    in: ['large_airport', 'medium_airport']
+  - field: 'icao_code'
+    not_empty: true
+
+entity:
+  external_id: 'icao_code'
+  name: 'name'
+  category: 'atc_zone'
+  metadata:
+    icao: 'icao_code'
+    iata_code: 'iata_code'
+    municipality: 'municipality'
+    airport_type: 'type'
+
+  # Computed from the raw row rather than copied 1:1.
+  derived:
+    # ILLUSTRATIVE circular buffer only. OurAirports publishes a point location, not an
+    # airspace polygon, so these radii are a crude visual stand-in sized by airport class.
+    # They are NOT real control-zone boundaries and must not be used for flight planning.
+    radius_km:
+      from: 'type'
+      map:
+        large_airport: 9
+        medium_airport: 5
+      default: 5
+
+    zone_note:
+      template: 'approximate control-zone radius, illustrative only'
+
+    # Link-out to LiveATC's own public search page for this airport. Deliberately NOT a raw
+    # audio stream URL: LiveATC's terms restrict third-party embedding of the streams
+    # themselves, so nothing here is proxied, embedded or auto-played.
+    liveatc_url:
+      template: 'https://www.liveatc.net/search/?icao={icao_code|lower}'
+
+observation:
+  latitude: 'latitude_deg'
+  longitude: 'longitude_deg'
+  altitude: '0' # literal constant 0 (elevation_ft is feet; the engine's altitude is metres)
+  speed: '0'
+  heading: '0'
+
+# Static reference data: exactly one observation row per facility, refreshed in place.
+recording:
+  mode: upsert
