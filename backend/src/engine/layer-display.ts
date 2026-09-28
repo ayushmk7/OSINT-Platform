@@ -74,6 +74,10 @@ export const DEFAULT_GROUP: LayerGroup = 'Other';
 export const DEFAULT_TRAIL_POINTS = 20;
 export const MAX_TRAIL_POINTS = 1000;
 export const MAX_SIZE = 10;
+/** Default client-side cap on how many entities of one layer are loaded and drawn. */
+export const DEFAULT_MAX_VISIBLE = 2000;
+/** Hard ceiling for `display.max_visible`: beyond this the globe's frame rate suffers. */
+export const MAX_VISIBLE_CEILING = 5000;
 
 /** Layer ids / categories: lowercase snake case. */
 export const LAYER_ID_PATTERN = /^[a-z][a-z0-9_]*$/;
@@ -84,6 +88,8 @@ export interface ResolvedLayer {
   name: string;
   group: LayerGroup;
   description: string;
+  /** Whether the layer is shown on first load (the viewer's own toggles override it). */
+  default_visible: boolean;
 }
 
 export interface ColorBy {
@@ -119,6 +125,8 @@ export interface ResolvedDisplay {
   /** `ttl` in whole seconds, or null. */
   ttl_seconds: number | null;
   fields: DisplayField[];
+  /** Most entities of this layer the frontend loads and draws. */
+  max_visible: number;
 }
 
 /**
@@ -178,6 +186,9 @@ export function validateLayerDisplay(config: Record<string, unknown>): string[] 
           errors.push(`layer.${key} must be a string`);
         }
       }
+      if (layer.default_visible !== undefined && typeof layer.default_visible !== 'boolean') {
+        errors.push('layer.default_visible must be true or false');
+      }
       if (
         layer.group !== undefined &&
         !(LAYER_GROUPS as readonly unknown[]).includes(layer.group)
@@ -214,6 +225,12 @@ export function validateLayerDisplay(config: Record<string, unknown>): string[] 
     const size = display.size;
     if (typeof size !== 'number' || !Number.isFinite(size) || size <= 0 || size > MAX_SIZE) {
       errors.push(`display.size must be a number in (0, ${MAX_SIZE}]`);
+    }
+  }
+  if (display.max_visible !== undefined) {
+    const mv = display.max_visible;
+    if (!Number.isInteger(mv) || (mv as number) < 1 || (mv as number) > MAX_VISIBLE_CEILING) {
+      errors.push(`display.max_visible must be an integer in [1, ${MAX_VISIBLE_CEILING}]`);
     }
   }
   if (display.rotate !== undefined && typeof display.rotate !== 'boolean') {
@@ -351,7 +368,8 @@ export function resolveLayerDisplay(
         ? rawLayer.name
         : String(config.display_name ?? config.name ?? ''),
     group: (rawLayer.group as LayerGroup | undefined) ?? DEFAULT_GROUP,
-    description: typeof rawLayer.description === 'string' ? rawLayer.description : ''
+    description: typeof rawLayer.description === 'string' ? rawLayer.description : '',
+    default_visible: rawLayer.default_visible !== false
   };
 
   let icon = typeof d.icon === 'string' ? d.icon : DEFAULT_ICON;
@@ -375,6 +393,7 @@ export function resolveLayerDisplay(
     },
     ttl: ttlSeconds === null ? null : String(d.ttl),
     ttl_seconds: ttlSeconds,
+    max_visible: typeof d.max_visible === 'number' ? d.max_visible : DEFAULT_MAX_VISIBLE,
     fields: Array.isArray(d.fields)
       ? (d.fields as Array<Record<string, unknown>>).map((f) => {
           const field: DisplayField = {
