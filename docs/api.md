@@ -15,6 +15,8 @@ All REST responses are JSON objects. List endpoints always wrap their results in
 | GET | `/api/sources` | Registered data sources. |
 | GET | `/api/entities` | Tracked entities, with category, source and bounding-box filters. |
 | GET | `/api/observations` | Recorded observations, filtered by entity or source. |
+| GET | `/api/insights` | AI analysis insights, filtered by minimum attention and time. |
+| GET | `/api/insights/status` | AI analysis engine status and loaded analyses. |
 
 There are no write endpoints.
 
@@ -212,6 +214,66 @@ Errors: `500` with message `Failed to fetch observations`.
 
 ---
 
+### GET /api/insights
+
+Insights produced by the AI analysis engine (see [data-sources.md](data-sources.md#ai-analyses-analysisd)), newest first. Returns an empty list when no LLM provider is configured and nothing was stored earlier. Defined in `backend/src/analysis/routes.ts`.
+
+| Parameter | Type | Notes |
+| :-- | :-- | :-- |
+| `limit` | integer | Default 50, clamped to 1..200. A non-numeric value is a `400`. |
+| `attention` | string | Minimum level, inclusive: `info`, `low`, `medium`, `high` or `critical`. `medium` returns medium, high and critical. |
+| `since` | ISO 8601 | Only insights created strictly after this time. |
+
+```bash
+curl 'http://localhost:4000/api/insights?attention=medium&limit=10'
+```
+
+```json
+{
+  "limit": 10,
+  "insights": [
+    {
+      "id": "0b6f1c3e-5d7a-4a57-9a40-3f1f7d0d2c11",
+      "analysis": "quake_swarm_detection",
+      "title": "Swarm on the Reykjanes Peninsula",
+      "summary": "Fourteen M1.8-3.1 events within 15 km since 04:10 UTC, no dominant mainshock.",
+      "attention": "medium",
+      "created_at": "2026-09-28T06:15:02.114Z",
+      "payload": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-5",
+        "input_records": 38,
+        "input_hash": "5f0c…",
+        "data": { "event_count": 14, "max_magnitude": 3.1, "pattern": "swarm" }
+      },
+      "refs": ["usgs_earthquakes:us7000abcd", "usgs_earthquakes:us7000abcf"]
+    }
+  ]
+}
+```
+
+`refs` are entity ids, verified to exist when the insight was stored. `payload.data` is present only when the analysis declares `output.schema`.
+
+Errors: `400` for an invalid `limit`, `attention` or `since`; `500` with message `Failed to fetch insights`.
+
+### GET /api/insights/status
+
+Whether the analysis engine runs, with which provider and model, and which analyses were loaded. The UI uses it for the Insights panel's empty state.
+
+```json
+{
+  "enabled": false,
+  "reason": "ANTHROPIC_API_KEY is not set",
+  "provider": null,
+  "model": null,
+  "analyses": [
+    { "name": "radiation_outliers", "description": "…", "schedule": "30m", "enabled": true }
+  ]
+}
+```
+
+---
+
 ## Error format
 
 Defined in `backend/src/api/errors.ts`. Every error the API produces, including unknown routes, uses the same envelope:
@@ -338,6 +400,29 @@ Sent to every connected client when the scheduler writes an entity that is new, 
 ```
 
 `data` is the mapper's `EntityRecord`. `broadcastEntityUpdate()` passes `metadata` through the same `parseJsonObject()` normaliser the REST layer uses, so it is always an object. The frontend's `parseEntityMetadata()` only guards the shape (anything that is not a plain object becomes `{}`). The values in this example are illustrative; `altitude` is metres (24,000 ft scaled by `0.3048`).
+
+#### `ai_insight`
+
+Sent whenever the AI analysis engine stores a new insight. `data` is the same object `GET /api/insights` returns.
+
+```json
+{
+  "type": "ai_insight",
+  "timestamp": "2026-09-28T06:15:02.120Z",
+  "data": {
+    "id": "0b6f1c3e-5d7a-4a57-9a40-3f1f7d0d2c11",
+    "analysis": "quake_swarm_detection",
+    "title": "Swarm on the Reykjanes Peninsula",
+    "summary": "Fourteen M1.8-3.1 events within 15 km since 04:10 UTC.",
+    "attention": "medium",
+    "created_at": "2026-09-28T06:15:02.114Z",
+    "payload": { "provider": "anthropic", "model": "claude-sonnet-5" },
+    "refs": ["usgs_earthquakes:us7000abcd"]
+  }
+}
+```
+
+The frontend adds it to the Insights panel (`insightsSlice.addInsight`).
 
 #### `ping`
 

@@ -5,6 +5,7 @@ import cors from 'cors';
 import Database from 'better-sqlite3';
 import apiRouter from './api';
 import { notFoundHandler, sendServerError } from './api/errors';
+import { createInsightsRouter } from './analysis/routes';
 
 /**
  * The spec lives in `src/api/` and tsc does not copy YAML into `dist/`, so resolve it from the
@@ -38,6 +39,7 @@ export function createApp(db: Database.Database): Express {
     });
   });
 
+  app.use('/api/insights', createInsightsRouter(db));
   app.use('/api', apiRouter);
 
   // Must stay LAST: JSON 404 envelope instead of Express's default HTML page.

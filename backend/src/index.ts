@@ -6,6 +6,7 @@ import { createApp } from './app';
 import { IngestionScheduler } from './engine/scheduler';
 import { setupWebSocketServer, WS_PATH } from './websocket/server';
 import { broadcaster } from './websocket/broadcaster';
+import { startAnalysisEngine } from './analysis';
 
 dotenv.config();
 
@@ -26,6 +27,11 @@ const scheduler = new IngestionScheduler(db, SOURCES_DIR);
 // updates, because nothing ever pushes a live frame.
 scheduler.onEntityUpdate = (entity) => broadcaster.broadcastEntityUpdate(entity);
 
+// AI analysis (analysis.d/). Inert — one info log — unless an LLM provider is configured.
+const analysisEngine = startAnalysisEngine(db, {
+  onInsight: (insight) => broadcaster.broadcastAiInsight(insight)
+});
+
 server.listen(PORT, () => {
   console.log(`MK-OSINT backend running on port ${PORT} (ws ${WS_PATH})`);
   if (process.env.INGEST_ENABLED === 'false') {
@@ -40,6 +46,7 @@ server.listen(PORT, () => {
 function shutdown(signal: string): void {
   console.log(`Received ${signal}, shutting down...`);
   scheduler.stop();
+  analysisEngine?.stop();
   for (const client of wss.clients) {
     client.terminate();
   }

@@ -1,0 +1,48 @@
+schema_version: 1
+name: radiation_outliers
+description: Radiation readings that stand out from the rest of the recent sensor network.
+enabled: true
+schedule: '30m'
+
+input:
+  layers: [radiation]
+  lookback: 24h
+  max_records: 300
+  filter:
+    - { field: metadata.cpm, op: exists }
+
+prompt: |
+  Task: find radiation sensor readings that are genuine outliers.
+
+  Records are recent Safecast-style measurements; `meta.cpm` is the reading and `meta.unit`
+  its unit (usually counts per minute). Ordinary background on common Geiger tubes sits
+  roughly between 10 and 80 CPM and varies with altitude, geology and detector model, so judge
+  a reading against nearby readings and the rest of this batch, not only a fixed threshold.
+
+  Report:
+  - Readings several times higher than comparable readings nearby or in the batch.
+  - Clusters of elevated readings from one area.
+  - Readings that look like sensor faults (zero, negative, absurdly high, wrong unit) — flag
+    these as `info` and say why you think it is a fault.
+
+  Nothing unusual? Return an empty list.
+
+  Current time: {{now}}
+  Input stats: {{stats}}
+
+  Readings:
+  {{records}}
+
+output:
+  max_insights: 3
+  schema:
+    type: object
+    properties:
+      peak_cpm: { type: number }
+      assessment:
+        type: string
+        enum: [elevated, cluster, sensor_fault, unclear]
+
+min_attention: low
+dedup_window: 12h
+retention: 7d

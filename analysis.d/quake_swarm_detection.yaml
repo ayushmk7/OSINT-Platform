@@ -1,0 +1,68 @@
+schema_version: 1
+name: quake_swarm_detection
+description: Earthquake sequences - many events packed into a small area within a day.
+enabled: true
+schedule: '15m'
+
+# Every recent quake together with how many other quakes fell within 50 km of it. The model
+# decides whether a dense neighbourhood is a swarm, an aftershock sequence or noise.
+input:
+  lookback: 24h
+  max_records: 200
+  sql: |
+    WITH q AS (
+      SELECT id, name, latitude, longitude, altitude, timestamp,
+             COALESCE(json_extract(metadata, '$.magnitude'), json_extract(metadata, '$.mag')) AS magnitude
+      FROM entities
+      WHERE category IN ('geological', 'earthquakes') AND timestamp >= :since
+    )
+    SELECT a.id,
+           a.name AS place,
+           a.magnitude,
+           round(a.altitude / 1000.0, 1) AS depth_km,
+           a.timestamp,
+           round(a.latitude, 3) AS lat,
+           round(a.longitude, 3) AS lon,
+           (SELECT count(*) FROM q b
+             WHERE b.id <> a.id
+               AND abs(b.latitude - a.latitude) < 1.0
+               AND haversine_km(a.latitude, a.longitude, b.latitude, b.longitude) <= 50) AS neighbours_50km
+    FROM q a
+    ORDER BY neighbours_50km DESC, a.magnitude DESC
+    LIMIT 200
+
+prompt: |
+  Task: detect earthquake swarms and aftershock sequences.
+
+  Each record is one earthquake from the last 24 hours with `neighbours_50km`, the number of
+  other quakes within 50 km in the same window. Depth is in km below the surface.
+
+  - A swarm: many similar-magnitude events with no dominant mainshock, clustered in place.
+  - An aftershock sequence: one clearly larger event followed by smaller ones nearby.
+  - Volcanic regions and geothermal fields often produce swarms; say so when the place names
+    suggest it.
+  - A handful of small events in a seismically busy region (California, Alaska, Japan, Chile,
+    Indonesia) is routine: `info` at most.
+
+  Produce one insight per distinct cluster, listing every quake id in the cluster.
+
+  Current time: {{now}}
+  Input stats: {{stats}}
+
+  Quakes:
+  {{records}}
+
+output:
+  max_insights: 4
+  schema:
+    type: object
+    properties:
+      event_count: { type: integer }
+      max_magnitude: { type: number }
+      pattern:
+        type: string
+        enum: [swarm, aftershock_sequence, unclear]
+
+min_attention: low
+dedup_window: 2h
+retention: 7d
