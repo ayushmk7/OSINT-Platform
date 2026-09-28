@@ -60,7 +60,7 @@ All code lives in `backend/src/engine/`.
 
 ### yaml-loader (`yaml-loader.ts`)
 
-`loadSourcesFromDir(dir)` reads every `*.yaml` / `*.yml` file in the directory in sorted order and parses it with the `yaml` package. A file is accepted only if it has `name`, `transport.url`, `parser.format`, `entity.external_id`, `observation.latitude` and `observation.longitude` as strings. Invalid or unparseable files are logged and skipped; they never abort the load.
+`loadSourcesFromDir(dir)` reads every `*.yaml` / `*.yml` file in the directory in sorted order and parses it with the `yaml` package. Each parsed file goes through `validateSourceConfig()`, which returns every problem it finds: a missing or empty `name`, `source_type`, `transport.type`, `transport.url`, `parser.format`, `entity.external_id`, `observation.latitude` or `observation.longitude`; a `schema_version` other than `1` (`SUPPORTED_SCHEMA_VERSIONS`; absent means 1); a `transport.retry.backoff` outside `exponential`, `linear`, `fixed`; or an `observation.scale` entry that is not one of `SCALABLE_OBSERVATION_FIELDS` or not a finite number. Invalid files are logged as `Skipping invalid source definition <path>: <problems>` and unparseable files are logged too; both are skipped and never abort the load.
 
 The file also defines the canonical category list, `ENTITY_CATEGORIES`:
 
@@ -78,7 +78,7 @@ The full schema is documented in [data-sources.md](data-sources.md).
 
 `IngestionScheduler` owns the polling loop.
 
-- `initSources()` loads the configs and upserts one row per source into the `sources` table (`id` = `name`, `name` = `display_name`, `type` = `source_type`, `transport` = `transport.type`, `update_interval_sec` = parsed interval, `enabled` = 0 or 1).
+- `initSources()` loads the configs and upserts one row per source into the `sources` table (`id` = `name`, `name` = `display_name`, `type` = `source_type`, `transport` = `transport.type`, `update_interval_sec` = parsed interval, `enabled` = 0 or 1). If a row cannot be written, the error is logged and that source is dropped from the configs (never polled) instead of aborting startup.
 - `start()` calls `initSources()`, then for each source that is not `enabled: false` polls once immediately and again every `transport.interval` (default 60 seconds) with `setInterval`.
 - `pollSource(config)` runs one fetch, parse, filter, map and persist cycle inside a single SQLite transaction and returns the number of records written. Errors are logged with the source name and the method returns 0, so one failing feed never stops the others.
 
@@ -86,9 +86,9 @@ Within a poll:
 
 1. Each raw record is checked against the source's `filter` rules. Excluded records are counted separately from malformed ones.
 2. `mapRecord` turns the record into an entity and an observation. Records without an id or valid coordinates are skipped, never plotted at (0, 0).
-3. The entity row is upserted by id.
+3. The entity row is upserted by its prefixed id (`<source name>:<external_id>`).
 4. The observation is written according to `recording.mode` (default `append`):
-   - `upsert`: one observation per entity (`obs_<entity_id>`), updated in place.
+   - `upsert`: one observation per entity (`obs_<entity id>`), updated in place.
    - `append`: `INSERT OR IGNORE`, so repeat polls of the same instant are no-ops. After the transaction, each touched entity is pruned to its newest 200 observations (`MAX_OBS_PER_ENTITY`).
 5. The scheduler keeps the last `latitude,longitude,altitude` it saw for every entity id in memory. Only entities that are new or whose position changed are collected for broadcast.
 
@@ -96,9 +96,11 @@ After the transaction commits, `onEntityUpdate` is called for each changed entit
 
 ### http-fetcher (`http-fetcher.ts`)
 
-`fetchUrl()` uses the global `fetch` with an `AbortController` timeout. It sends `User-Agent: ReconVillage-OSINT/1.0` plus any configured headers, treats any non-2xx status as a failure, and returns the body as text. Failed attempts are retried with exponential backoff (`initialDelayMs * 2^(attempt-1)`, capped at `maxDelayMs`). After the last attempt it throws the last error.
+`fetchUrl()` uses the global `fetch` with an `AbortController` timeout. It sends `User-Agent: ReconVillage-OSINT/1.0` plus any configured headers, treats any non-2xx status as a failure, and returns the body as text. Failed attempts are retried after `retryDelayMs(attempt, backoff, initialDelayMs, maxDelayMs)`: `exponential` (`initialDelayMs * 2^(attempt-1)`), `linear` (`initialDelayMs * attempt`) or `fixed` (`initialDelayMs`), always capped at `maxDelayMs`. After the last attempt it throws the last error.
 
-The scheduler passes these values from the YAML: `timeout` (default 10s), `retry.max_attempts` (default 3), `retry.initial_delay` (default 1s), `retry.max_delay` (default 15s).
+### retry (`retry.ts`)
+
+`retry.ts` holds `BACKOFF_STRATEGIES`, `retryDelayMs()` and `DEFAULT_RETRY`, the single default retry policy: 3 attempts, 1 second initial delay, 15 second cap, exponential backoff. Both `fetchUrl()` and the scheduler fall back to it, so there is no second set of defaults. The scheduler passes these values from the YAML: `timeout` (default 10s), `retry.max_attempts`, `retry.initial_delay`, `retry.max_delay` and `retry.backoff`, each defaulting to `DEFAULT_RETRY`.
 
 ### parsers (`parsers/`)
 
@@ -117,10 +119,10 @@ The scheduler passes these values from the YAML: `timeout` (default 10s), `retry
 - `resolveValue(obj, expr)` tries the expression as a path first. If that yields nothing and the expression is a numeric string, it returns the number as a literal, which is why `altitude: '0'` gives 0.
 - `passesFilter(raw, rules)` evaluates the `filter` list (`in` and `not_empty`).
 - `computeDerived(raw, derived)` builds computed metadata from `map` lookups, `{path}` templates or plain copies.
-- `mapRecord(raw, config, sourceId)` produces the `EntityRecord` and `ObservationRecord`. It normalizes timestamps (epoch seconds, epoch milliseconds or anything `Date.parse` accepts) to ISO 8601, falling back to ingest time. It also builds a deterministic observation id, which is the basis of deduplication:
-  - `upsert`: `obs_<id>`
-  - `append` with a source timestamp: `obs_<id>_<epoch_ms>`
-  - `append` without a source timestamp: `obs_<id>_<lat.toFixed(4)>_<lon.toFixed(4)>`, so a stationary target does not create a new row on every poll.
+- `mapRecord(raw, config, sourceId)` produces the `EntityRecord` and `ObservationRecord`. The entity id is `<sourceId>:<external_id>`, so feeds that reuse an external id never collide. Latitude, longitude, altitude, speed and heading are multiplied by any `observation.scale` factor; altitude is stored in metres. It normalizes timestamps (epoch seconds, epoch milliseconds or anything `Date.parse` accepts) to ISO 8601, falling back to ingest time. It also builds a deterministic observation id, which is the basis of deduplication:
+  - `upsert`: `obs_<entity id>`
+  - `append` with a source timestamp: `obs_<entity id>_<epoch_ms>`
+  - `append` without a source timestamp: `obs_<entity id>_<lat.toFixed(4)>_<lon.toFixed(4)>`, so a stationary target does not create a new row on every poll.
 
 ## Database schema
 
@@ -136,20 +138,20 @@ Defined in `backend/src/db/database.ts`. The database runs in WAL mode (`journal
 | `transport` | TEXT NOT NULL | The YAML `transport.type`, for example `http_poll`. |
 | `url` | TEXT NOT NULL | |
 | `update_interval_sec` | INTEGER NOT NULL DEFAULT 60 | |
-| `enabled` | INTEGER NOT NULL DEFAULT 1 | 0 or 1. |
+| `enabled` | INTEGER NOT NULL DEFAULT 1 | 0 or 1. Returned by the API as a boolean. |
 
 ### `entities`
 
 | Column | Type | Notes |
 | :-- | :-- | :-- |
-| `id` | TEXT PRIMARY KEY | The mapped `external_id`. |
+| `id` | TEXT PRIMARY KEY | `<source name>:<external_id>`. |
 | `source_id` | TEXT NOT NULL | FK to `sources(id)`, `ON DELETE CASCADE`. |
 | `category` | TEXT NOT NULL | Indexed (`idx_entities_category`). |
 | `name` | TEXT NOT NULL | |
 | `latitude`, `longitude` | REAL NOT NULL | |
-| `altitude` | REAL NOT NULL DEFAULT 0.0 | |
+| `altitude` | REAL NOT NULL DEFAULT 0.0 | Metres. |
 | `timestamp` | TEXT NOT NULL | ISO 8601. |
-| `metadata` | TEXT NOT NULL DEFAULT `'{}'` | JSON string. |
+| `metadata` | TEXT NOT NULL DEFAULT `'{}'` | JSON string. Returned by the API as an object. |
 
 Also indexed: `idx_entities_source_id`.
 
@@ -163,15 +165,15 @@ Also indexed: `idx_entities_source_id`.
 | `latitude`, `longitude` | REAL NOT NULL | |
 | `altitude`, `speed`, `heading` | REAL NOT NULL DEFAULT 0.0 | |
 | `timestamp` | TEXT NOT NULL | ISO 8601. Indexed. |
-| `raw_payload` | TEXT NOT NULL DEFAULT `'{}'` | The raw source record as a JSON string. |
+| `raw_payload` | TEXT NOT NULL DEFAULT `'{}'` | The raw source record as a JSON string. Returned by the API as an object. |
 
 A unique index `ux_observations_entity_timestamp` on `(entity_id, timestamp)` enforces one observation per entity per instant. Together with the deterministic id and `INSERT OR IGNORE`, it prevents duplicate rows when a feed returns the same data on consecutive polls.
 
-Queries live in `backend/src/db/queries.ts`. All filters are bound as prepared-statement parameters. `getInitialSnapshot(perCategory)` uses `ROW_NUMBER() OVER (PARTITION BY category ORDER BY timestamp DESC)` to take the newest N entities per category. This stops a high-frequency category such as aircraft from crowding the others out of the first paint.
+Queries live in `backend/src/db/queries.ts`. All filters are bound as prepared-statement parameters. `getEntities()` and `getObservations()` return one page of rows plus `total`, a `COUNT(*)` over the same `WHERE` clause. `serializeSource()`, `serializeEntity()` and `serializeObservation()` (built on `parseJsonObject()`) turn `enabled` into a boolean and `metadata` / `raw_payload` into objects before rows leave the query layer. `getInitialSnapshot(perCategory)` uses `ROW_NUMBER() OVER (PARTITION BY category ORDER BY timestamp DESC)` to take the newest N entities per category. This stops a high-frequency category such as aircraft from crowding the others out of the first paint.
 
 ## REST API
 
-`backend/src/app.ts` mounts CORS, JSON body parsing, `GET /api/health`, and the router in `backend/src/api/index.ts` with `/api/sources`, `/api/entities` and `/api/observations`. Responses are always wrapped objects, never bare arrays. Errors use the envelope in `backend/src/api/errors.ts`. Full details are in [api.md](api.md).
+`backend/src/app.ts` mounts CORS, JSON body parsing, `GET /api/health`, `GET /api/openapi.yaml` (serves `backend/src/api/openapi.yaml`), and the router in `backend/src/api/index.ts` with `/api/sources`, `/api/entities` and `/api/observations`. `notFoundHandler` is registered last, so unknown routes get a JSON 404. Responses are always wrapped objects, never bare arrays. Errors use the envelope in `backend/src/api/errors.ts`. Full details are in [api.md](api.md).
 
 ## WebSocket server and broadcaster
 
@@ -183,7 +185,7 @@ Queries live in `backend/src/db/queries.ts`. All filters are bound as prepared-s
 
 A heartbeat runs every 30 seconds (`HEARTBEAT_INTERVAL_MS`). Each round sends a protocol-level ping and an application-level `{"type":"ping"}` message, and terminates any socket that did not answer the previous round. The timer is `unref()`'d so it never keeps the process alive.
 
-`backend/src/websocket/broadcaster.ts` exports a singleton `TelemetryBroadcaster` that holds the set of live sockets and fans messages out to every open one. The scheduler calls `broadcastEntityUpdate` only for new or moved entities, so a feed that returns thousands of unchanged records produces no traffic. A `broadcastObservation` method exists but nothing in the current code calls it.
+`backend/src/websocket/broadcaster.ts` exports a singleton `TelemetryBroadcaster` that holds the set of live sockets and fans messages out to every open one. The scheduler calls `broadcastEntityUpdate` only for new or moved entities, so a feed that returns thousands of unchanged records produces no traffic. `broadcastEntityUpdate` normalises `metadata` to an object with `parseJsonObject()`, the same wire format as REST and `initial_state`. No other message is broadcast.
 
 The message format is documented in [api.md](api.md#websocket-protocol).
 
@@ -199,7 +201,7 @@ The message format is documented in [api.md](api.md#websocket-protocol).
 | `sources` | `slices/sourcesSlice.ts` | `sources` (by id), `enabledSourceIds` | `setSources`, `toggleSourceEnabled` |
 | `filter` | `slices/filterSlice.ts` | `filterMode`, `fpsVisible`, `lodEnabled`, `currentFps`, `globeStyle` | `setFilterMode`, `toggleFpsDisplay`, `toggleLod`, `updateFps`, `setGlobeStyle` |
 
-Each entity keeps a client-side `trail` of up to 20 points (`MAX_TRAIL_POINTS`), appended on every `upsertEntity`. `parseEntityMetadata()` accepts metadata as either a JSON string (from SQLite) or an object (from `entity_update` frames) and never throws.
+Each entity keeps a client-side `trail` of up to 20 points (`MAX_TRAIL_POINTS`), appended on every `upsertEntity`. The backend always sends `metadata` as an object; `parseEntityMetadata()` only guards the shape, returning `{}` for anything that is not a plain object, and never throws.
 
 Toggling a source in the layer drawer only changes `enabledSourceIds` in the browser. It does not change the `enabled` column or stop polling on the backend.
 

@@ -19,10 +19,11 @@ Optional backend config: copy `backend/.env.example` to `backend/.env`.
 ## Before opening a PR
 
 ```bash
-make test lint build
+npm run format:check
+make lint test build
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same lint, test and build steps on every push and PR to `main`.
+CI (`.github/workflows/ci.yml`) runs `npm ci`, then the same format check, lint, test and build steps on Node 22, on every push and PR to `main`.
 
 ## Adding a data source
 
@@ -30,4 +31,4 @@ Sources are YAML files in `sources.d/`. See [docs/data-sources.md](docs/data-sou
 
 ## Code style
 
-Prettier is configured in `.prettierrc` (single quotes, 100-column width, no trailing commas). Run `make format` before committing. TypeScript must pass `npm run lint` (`tsc --noEmit`) in both workspaces.
+Prettier is configured in `.prettierrc` (single quotes, 100-column width, no trailing commas). Run `make format` before committing; CI fails on unformatted files (`npm run format:check`). TypeScript must pass `npm run lint` (`tsc --noEmit`) in both workspaces.

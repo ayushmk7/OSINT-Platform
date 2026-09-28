@@ -2,7 +2,7 @@
 
 The backend exposes a small read-only REST API and one WebSocket endpoint, both on the same HTTP server (port 4000 by default). In development the Vite server on port 3000 proxies `/api` and `/ws` to it, so the frontend uses relative URLs.
 
-The OpenAPI 3.0 description lives at [`backend/src/api/openapi.yaml`](../backend/src/api/openapi.yaml). It is a static file; the server does not serve it. It documents only the `category` and `entity_id` query parameters, so this page is the more complete reference.
+The OpenAPI 3.0 description lives at [`backend/src/api/openapi.yaml`](../backend/src/api/openapi.yaml) and is served by the backend at `GET /api/openapi.yaml`. It covers every endpoint, query parameter and error response on this page.
 
 All REST responses are JSON objects. List endpoints always wrap their results in an object and never return a bare array.
 
@@ -11,6 +11,7 @@ All REST responses are JSON objects. List endpoints always wrap their results in
 | Method | Path | Purpose |
 | :-- | :-- | :-- |
 | GET | `/api/health` | Liveness check. |
+| GET | `/api/openapi.yaml` | The OpenAPI spec (`application/yaml`). |
 | GET | `/api/sources` | Registered data sources. |
 | GET | `/api/entities` | Tracked entities, with category, source and bounding-box filters. |
 | GET | `/api/observations` | Recorded observations, filtered by entity or source. |
@@ -19,10 +20,12 @@ There are no write endpoints.
 
 ### Column types in responses
 
-Rows are returned straight from SQLite, which affects a few fields:
+SQLite stores `metadata` and `raw_payload` as JSON text and `enabled` as an integer. The query layer (`serializeSource`, `serializeEntity` and `serializeObservation` in `backend/src/db/queries.ts`) normalises them before they leave the server:
 
-- `sources[].enabled` is an integer, `1` or `0`, not a boolean.
-- `entities[].metadata` and `observations[].raw_payload` are JSON-encoded strings. Parse them on the client.
+- `sources[].enabled` is a boolean.
+- `entities[].metadata` and `observations[].raw_payload` are parsed JSON objects. A malformed stored value becomes `{}` rather than failing the response.
+
+The WebSocket `initial_state` and `entity_update` frames use the same wire format, so clients never need to `JSON.parse` a field.
 
 ### Pagination
 
@@ -31,7 +34,7 @@ Rows are returned straight from SQLite, which affects a few fields:
 - `limit` defaults to 100 and is clamped to 1..1000. A non-numeric value falls back to 100.
 - `offset` defaults to 0. Negative values become 0 and non-numeric values fall back to 0.
 - Results are ordered by `timestamp` descending.
-- `total` is the number of rows in the returned page, not the total number of matching rows in the database.
+- `total` is the number of rows matching the filters (a `COUNT(*)` over the same `WHERE` clause), independent of `limit` and `offset`. Use it to work out how many pages exist.
 
 ---
 
@@ -48,6 +51,16 @@ curl http://localhost:4000/api/health
 ```
 
 `status` is `"ok"` while the database handle is open and `"degraded"` otherwise. The HTTP status is 200 in both cases.
+
+---
+
+### GET /api/openapi.yaml
+
+Defined in `backend/src/app.ts`. Returns the spec file as `application/yaml`, read from disk on each request. If the file cannot be read the response is a `500` with message `Failed to read OpenAPI spec`.
+
+```bash
+curl http://localhost:4000/api/openapi.yaml
+```
 
 ---
 
@@ -69,7 +82,7 @@ curl http://localhost:4000/api/sources
       "transport": "http_poll",
       "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson",
       "update_interval_sec": 60,
-      "enabled": 1
+      "enabled": true
     }
   ]
 }
@@ -83,7 +96,7 @@ curl http://localhost:4000/api/sources
 | `transport` | YAML `transport.type` |
 | `url` | YAML `transport.url` |
 | `update_interval_sec` | parsed `transport.interval` |
-| `enabled` | `1` unless the YAML sets `enabled: false` |
+| `enabled` | `true` unless the YAML sets `enabled: false` |
 
 Errors: `500` with message `Failed to fetch sources`.
 
@@ -102,6 +115,8 @@ Defined in `backend/src/api/routes/entities.ts`.
 | `limit` | integer | Page size, see [Pagination](#pagination). |
 | `offset` | integer | Rows to skip. |
 
+Entity `id`s are namespaced by source as `<source_name>:<external_id>` (see [data-sources.md](data-sources.md#entity)). `altitude` is always metres; for USGS it is the depth below the surface as a negative number, while `metadata.depth` keeps the raw kilometre value.
+
 Each bound is optional and applied on its own. An empty string is treated as absent. The bounding box does not wrap across the antimeridian.
 
 ```bash
@@ -110,20 +125,20 @@ curl "http://localhost:4000/api/entities?category=geological&min_lat=30&max_lat=
 
 ```json
 {
-  "total": 1,
+  "total": 12,
   "limit": 1,
   "offset": 0,
   "entities": [
     {
-      "id": "ci40669442",
+      "id": "usgs_earthquakes:ci40669442",
       "source_id": "usgs_earthquakes",
       "category": "geological",
       "name": "3 km NNW of Murrieta, CA",
       "latitude": 33.5795,
       "longitude": -117.2311666666667,
-      "altitude": 15.07,
+      "altitude": -15070,
       "timestamp": "2026-08-09T17:38:15.660Z",
-      "metadata": "{\"magnitude\":1.61,\"depth\":15.07}"
+      "metadata": { "magnitude": 1.61, "depth": 15.07 }
     }
   ]
 }
@@ -154,32 +169,42 @@ Defined in `backend/src/api/routes/observations.ts`.
 | `offset` | integer | Rows to skip. |
 
 ```bash
-curl "http://localhost:4000/api/observations?entity_id=25544&limit=1"
+curl "http://localhost:4000/api/observations?entity_id=iss_position:25544&limit=1"
 ```
 
 ```json
 {
-  "total": 1,
+  "total": 200,
   "limit": 1,
   "offset": 0,
   "observations": [
     {
-      "id": "obs_25544_1786644444000",
-      "entity_id": "25544",
+      "id": "obs_iss_position:25544_1786644444000",
+      "entity_id": "iss_position:25544",
       "source_id": "iss_position",
       "latitude": 26.992672280134,
       "longitude": -62.503173202437,
-      "altitude": 420.41298073631,
+      "altitude": 420412.98073631,
       "speed": 27584.123987064,
       "heading": 0,
       "timestamp": "2026-08-13T18:07:24.000Z",
-      "raw_payload": "{\"name\":\"iss\",\"id\":25544,\"latitude\":26.992672280134,\"longitude\":-62.503173202437,\"altitude\":420.41298073631,\"velocity\":27584.123987064,\"visibility\":\"daylight\",\"timestamp\":1786644444,\"units\":\"kilometers\"}"
+      "raw_payload": {
+        "name": "iss",
+        "id": 25544,
+        "latitude": 26.992672280134,
+        "longitude": -62.503173202437,
+        "altitude": 420.41298073631,
+        "velocity": 27584.123987064,
+        "visibility": "daylight",
+        "timestamp": 1786644444,
+        "units": "kilometers"
+      }
     }
   ]
 }
 ```
 
-(The `raw_payload` above is shortened; the real value contains the full source record.)
+(The `raw_payload` above is shortened; the real value contains the full source record. It is the upstream record as received, so its `altitude` is still in kilometres while the stored `altitude` has been scaled to metres.)
 
 How many observations exist per entity depends on the source's recording mode: one for `upsert` sources, up to 200 for `append` sources. See [data-sources.md](data-sources.md#recording-modes).
 
@@ -189,7 +214,7 @@ Errors: `500` with message `Failed to fetch observations`.
 
 ## Error format
 
-Defined in `backend/src/api/errors.ts`. Every error the API routes produce uses the same envelope:
+Defined in `backend/src/api/errors.ts`. Every error the API produces, including unknown routes, uses the same envelope:
 
 ```json
 {
@@ -203,13 +228,24 @@ Defined in `backend/src/api/errors.ts`. Every error the API routes produce uses 
 | Field | Type | Notes |
 | :-- | :-- | :-- |
 | `status` | integer | Same as the HTTP status code. |
-| `error` | string | `"Bad Request"` or `"Internal Server Error"` in the current routes. |
+| `error` | string | `"Bad Request"`, `"Not Found"` or `"Internal Server Error"`. |
 | `message` | string | A fixed, safe string chosen by the route. |
 | `details` | null | Always `null`. |
 
 For 500 errors (`sendServerError`), the underlying exception is logged on the server as `[api] <context>: <error>`, and `message` is only the context string, such as `Failed to fetch entities`. Stack traces and raw error messages are never sent to the client.
 
-Requests to paths that match no route (for example `GET /api/unknown`) are handled by Express's default 404 handler. They return an HTML `Cannot GET ...` page, not this envelope.
+Requests to paths that match no route (for example `GET /api/unknown`) are caught by `notFoundHandler`, registered last in `backend/src/app.ts`. They return `404` with this envelope:
+
+```json
+{
+  "status": 404,
+  "error": "Not Found",
+  "message": "Route not found: GET /api/unknown",
+  "details": null
+}
+```
+
+The WebSocket upgrade on `/ws/telemetry` never reaches Express, so the catch-all does not affect it.
 
 ---
 
@@ -254,20 +290,20 @@ Sent once, right after the connection opens.
         "transport": "http_poll",
         "url": "https://api.wheretheiss.at/v1/satellites/25544",
         "update_interval_sec": 30,
-        "enabled": 1
+        "enabled": true
       }
     ],
     "entities": [
       {
-        "id": "25544",
+        "id": "iss_position:25544",
         "source_id": "iss_position",
         "category": "satellite",
         "name": "iss",
         "latitude": 26.992672280134,
         "longitude": -62.503173202437,
-        "altitude": 420.41298073631,
+        "altitude": 420412.98073631,
         "timestamp": "2026-08-13T18:07:24.000Z",
-        "metadata": "{\"visibility\":\"daylight\",\"velocity\":27584.123987064}"
+        "metadata": { "visibility": "daylight", "velocity": 27584.123987064 }
       }
     ]
   }
@@ -275,7 +311,7 @@ Sent once, right after the connection opens.
 ```
 
 - `sources` holds every row of the `sources` table, in the same shape as `GET /api/sources`.
-- `entities` is a category-balanced snapshot: the newest 300 entities per category (`SNAPSHOT_PER_CATEGORY`). Rows come straight from SQLite, so `metadata` is a JSON string.
+- `entities` is a category-balanced snapshot: the newest 300 entities per category (`SNAPSHOT_PER_CATEGORY`). `metadata` is a parsed object, as in the REST responses.
 
 If building the snapshot fails, the error is logged on the server and no `initial_state` frame is sent. The socket stays open.
 
@@ -288,20 +324,20 @@ Sent to every connected client when the scheduler writes an entity that is new, 
   "type": "entity_update",
   "timestamp": "2026-08-13T18:08:00.004Z",
   "data": {
-    "id": "ae1234",
+    "id": "adsb_military:ae1234",
     "source_id": "adsb_military",
     "category": "aircraft",
     "name": "RCH123",
     "latitude": 38.12,
     "longitude": -76.45,
-    "altitude": 24000,
+    "altitude": 7315.2,
     "timestamp": "2026-08-13T18:07:59.870Z",
     "metadata": { "callsign": "RCH123", "registration": "12-3456", "type": "C17" }
   }
 }
 ```
 
-`data` is the mapper's `EntityRecord`, sent before it passes through SQLite. `metadata` is therefore an object here, not a string. Clients should accept both forms; the frontend uses `parseEntityMetadata()` for this. The values in this example are illustrative.
+`data` is the mapper's `EntityRecord`. `broadcastEntityUpdate()` passes `metadata` through the same `parseJsonObject()` normaliser the REST layer uses, so it is always an object. The frontend's `parseEntityMetadata()` only guards the shape (anything that is not a plain object becomes `{}`). The values in this example are illustrative; `altitude` is metres (24,000 ft scaled by `0.3048`).
 
 #### `ping`
 
@@ -319,9 +355,7 @@ The reply to a client `ping`.
 { "type": "pong", "timestamp": "2026-08-13T18:08:30.015Z" }
 ```
 
-#### `observation` (defined, not currently sent)
-
-`TelemetryBroadcaster.broadcastObservation()` would send `{ "type": "observation", "timestamp": ..., "data": <observation> }`, but nothing in the current code calls it. The scheduler deliberately does not broadcast per-record observations. Clients should not rely on this message.
+The server sends no other message types. Individual observations are not streamed; fetch them from `GET /api/observations`.
 
 ### Client to server
 

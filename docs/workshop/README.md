@@ -113,7 +113,7 @@ A monthly subscription is usually cheaper for heavy interactive use. Pay-per-tok
 
 Sources are declarative: each is a single YAML file describing how to fetch a public feed and map it onto the globe. Adding one needs no engine changes.
 
-- **Add any feed with the skill.** [`skills/onboard-source/SKILL.md`](../../skills/onboard-source/SKILL.md) takes a URL, inspects the response and writes a source definition for you. Check its output against [../data-sources.md](../data-sources.md), because the skill's own template describes schema features the engine does not implement.
+- **Add any feed with the skill.** [`skills/onboard-source/SKILL.md`](../../skills/onboard-source/SKILL.md) takes a URL, inspects the response and writes a source definition for you. The skill follows the same schema as [../data-sources.md](../data-sources.md).
 - **Start from an example.** [`skills/onboard-source/examples/`](../../skills/onboard-source/examples/) has 19 no-auth source definitions covering flights, ships, satellites and the ISS, earthquakes, volcanoes and wildfires, and radiation, nuclear and power. Copy one into `sources.d/` and restart the backend.
 
 A source is just data fetched over HTTP, parsed, and pinned to a point:

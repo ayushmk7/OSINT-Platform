@@ -80,6 +80,8 @@ INGEST_ENABLED=false npm run dev --prefix backend
 
 To start from an empty database, stop the backend and delete `backend/recon.db*`. The schema is recreated on the next start.
 
+A local `backend/recon.db` created before entity ids were namespaced by source still holds unprefixed ids (for example `25544` instead of `iss_position:25544`) alongside the new prefixed rows. There is no migration: delete `backend/recon.db*` to reset.
+
 ## Testing
 
 ```bash
@@ -89,7 +91,7 @@ make test       # backend (jest) then frontend (vitest)
 ### Backend: Jest
 
 - Config: `backend/jest.config.js` (`ts-jest`, Node environment).
-- Tests: `backend/src/__tests__/*.test.ts`. They cover the database, field mapper, HTTP fetcher, parsers, REST routes, scheduler, WebSocket server and YAML loader.
+- Tests: `backend/src/__tests__/*.test.ts`. They cover the database, field mapper, HTTP fetcher (including the retry backoff strategies), parsers, REST routes, scheduler, WebSocket server and YAML loader (including validation).
 - Run one file: `npx jest src/__tests__/field-mapper.test.ts` from `backend/`.
 
 ### Frontend: Vitest
@@ -114,26 +116,28 @@ The `lint` scripts are TypeScript type checks only. No ESLint is configured. Bot
 ## Formatting
 
 ```bash
-make format     # npx prettier --write "**/*.{ts,tsx,json,md,yaml}"
+make format            # npx prettier --write "**/*.{ts,tsx,json,md,yaml}"
+npm run format:check   # prettier --check, same glob; fails if anything is unformatted
 ```
 
 Settings in `.prettierrc`: single quotes, 100-column print width, no trailing commas.
 
 `.prettierignore` excludes `node_modules/`, `dist/`, `build/` and `package-lock.json`, plus the workshop kit's hand-authored prose and fixtures: `README.md`, `AGENTS.md`, `CLAUDE.md`, `RTK.md`, `docs/`, `tools/` and `skills/`. Source YAML in `sources.d/` is formatted.
 
-CI does not check formatting, so run `make format` before committing.
+CI runs `npm run format:check`, so run `make format` before committing. There is no `make` target for the check.
 
 ## Marker icon preview
 
-[`tools/tactical-icon-preview.html`](../tools/tactical-icon-preview.html) is a standalone page with no build step. Open it directly in a browser to inspect the globe's marker silhouettes at large size and at several rotations, which shows how heading rotation looks. It carries its own copy of the Canvas 2D drawing functions, so it does not update automatically when `frontend/src/components/globeMarkers.ts` changes. It currently lacks the `atc_zone` tower icon.
+[`tools/tactical-icon-preview.html`](../tools/tactical-icon-preview.html) is a standalone page with no build step. Open it directly in a browser to inspect the globe's marker silhouettes at large size and at several rotations, which shows how heading rotation looks. It carries its own copy of the Canvas 2D drawing functions, so it does not update automatically when `frontend/src/components/globeMarkers.ts` changes. It covers every canonical category, including the `atc_zone` tower.
 
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push and pull request to `main`, on `ubuntu-latest` with Node 22 and the npm cache:
 
 1. `npm ci`
-2. `npm run lint`
-3. `npm test`
-4. `npm run build`
+2. `npm run format:check`
+3. `npm run lint`
+4. `npm test`
+5. `npm run build`
 
-To reproduce it locally, run `npm ci && npm run lint && npm test && npm run build` (or `make test lint build` on an existing install).
+To reproduce it locally, run `npm ci && npm run format:check && npm run lint && npm test && npm run build` (or `npm run format:check && make lint test build` on an existing install).

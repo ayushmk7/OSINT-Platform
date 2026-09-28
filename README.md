@@ -36,8 +36,9 @@ for the workshop, jump to [The workshop](#the-workshop).
   then `entity_update` frames as the ingestion engine fetches new data.
 - Declarative ingestion engine: HTTP polling with timeouts and retry/backoff, JSON, GeoJSON, XML,
   and CSV parsers, a path-based field mapper, record filters, and `append` or `upsert` recording.
-- REST API with an OpenAPI 3.0 spec: `/api/health`, `/api/sources`, `/api/entities`,
-  `/api/observations`.
+- REST API with an OpenAPI 3.0 spec (served at `/api/openapi.yaml`): `/api/health`,
+  `/api/sources`, `/api/entities`, `/api/observations`. Paginated responses carry the full match
+  count in `total`, and unknown routes return a JSON 404.
 - Layer controls, an entity details drawer, a telemetry stats banner, and an FPS / level-of-detail
   HUD.
 - Cinematic overlays: CRT, Night Vision, FLIR thermal.
@@ -63,6 +64,7 @@ make test      # Jest (backend) + Vitest (frontend)
 make build     # tsc for the backend, tsc + vite build for the frontend
 make lint      # type-check both workspaces
 make format    # Prettier over the repo
+npm run format:check   # Prettier check (run in CI)
 make help      # list all targets
 ```
 
@@ -99,7 +101,9 @@ flowchart LR
 
 Express and the WebSocket server share one HTTP listener. When the scheduler writes an entity it
 calls `onEntityUpdate`, which the broadcaster fans out to every connected client. The frontend
-loads sources and entities over REST (RTK Query) and keeps them current from the socket.
+gets sources and entities from the socket (`initial_state`, then `entity_update`) and loads an
+entity's observation history over REST (RTK Query). REST and WebSocket payloads share one wire
+format: `metadata` and `raw_payload` are objects and `enabled` is a boolean.
 
 More detail: [docs/architecture.md](docs/architecture.md) and [docs/api.md](docs/api.md).
 
@@ -174,7 +178,7 @@ recording: { mode: upsert }
 ```
 
 `category` must be one of `satellite`, `aircraft`, `geological`, `radiation`, `maritime`, or
-`atc_zone`. The full schema (headers, retries, filters, metadata mapping) is in
+`atc_zone`. The full schema (headers, retries, filters, metadata mapping, unit scaling) is in
 [docs/data-sources.md](docs/data-sources.md).
 
 To generate one from a URL, point your agent at

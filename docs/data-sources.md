@@ -9,8 +9,10 @@ This page documents the schema as implemented in `backend/src/engine/yaml-loader
 - The directory is `SOURCES_DIR`, defaulting to `sources.d/` at the repository root.
 - Every `*.yaml` and `*.yml` file is read, in alphabetical order. Other files are ignored.
 - Files are read once, at startup. Restart the backend to pick up changes.
-- A file is loaded only if these fields are present and are strings: `name`, `transport.url`, `parser.format`, `entity.external_id`, `observation.latitude`, `observation.longitude`. Otherwise it is skipped with the warning `Skipping invalid source definition (missing required fields)`.
-- A file that is not valid YAML is logged and skipped. It never stops the other sources from loading.
+- Each file is checked by `validateSourceConfig()`. It must contain these fields as non-empty strings: `name`, `source_type`, `transport.type`, `transport.url`, `parser.format`, `entity.external_id`, `observation.latitude`, `observation.longitude`. It is also rejected if `schema_version` is present and not `1`, if `transport.retry.backoff` is not one of `exponential`, `linear` or `fixed`, or if `observation.scale` is malformed (see [`observation`](#observation)).
+- A file that fails validation is skipped with the error `Skipping invalid source definition <path>: <problems>`, which lists every problem found, separated by `;`.
+- A file that is not valid YAML is logged and skipped. Neither case stops the other sources from loading.
+- If writing a source's row to the `sources` table fails at startup, the error `Failed to register source <name>; it will not be polled` is logged and that source is dropped. The other sources still start.
 - If `entity.category` is set to a value outside the canonical list, the source still loads, but a warning is logged. The frontend draws such entities with a grey fallback marker and does not list them in the layer drawer's category filters.
 
 ## Schema reference
@@ -19,12 +21,12 @@ This page documents the schema as implemented in `backend/src/engine/yaml-loader
 
 | Field | Type | Required | Default | Meaning |
 | :-- | :-- | :-- | :-- | :-- |
-| `schema_version` | number | no | | Informational. The engine does not read it. All shipped files use `1`. |
+| `schema_version` | number | no | `1` | Schema version. Only `1` is accepted; any other value makes the file invalid. Absent means `1`. |
 | `name` | string | **yes** | | Unique source id. Stored as `sources.id` and as `source_id` on every entity and observation. |
-| `source_type` | string | **yes in practice** | | Stored in `sources.type`. The loader does not check it, but the column is `NOT NULL`, so a file without it makes source registration fail at startup. |
+| `source_type` | string | **yes** | | Stored in `sources.type`. |
 | `layer_type` | string | no | | Used as the entity category when `entity.category` is absent. |
 | `display_name` | string | no | `name` | Human label, stored in `sources.name` and shown in the layer drawer. |
-| `enabled` | boolean | no | `true` | `false` registers the source (it appears in the API with `enabled: 0`) but never polls it. |
+| `enabled` | boolean | no | `true` | `false` registers the source (it appears in the API with `enabled: false`) but never polls it. |
 | `transport` | object | **yes** | | How to fetch. See below. |
 | `parser` | object | **yes** | | How to split the response into records. |
 | `filter` | list | no | | Record-level predicates. |
@@ -36,7 +38,7 @@ This page documents the schema as implemented in `backend/src/engine/yaml-loader
 
 | Field | Type | Required | Default | Meaning |
 | :-- | :-- | :-- | :-- | :-- |
-| `type` | string | no | | Stored in `sources.transport`. The engine only implements HTTP polling and does not branch on this value; use `http_poll`. |
+| `type` | string | **yes** | | Stored in `sources.transport`. The engine only implements HTTP polling and does not branch on this value; use `http_poll`. |
 | `url` | string | **yes** | | Endpoint to fetch. |
 | `method` | string | no | `GET` | HTTP method. No request body is sent. |
 | `headers` | map of string | no | | Extra request headers. `User-Agent: ReconVillage-OSINT/1.0` is sent by default and can be overridden here. |
@@ -45,7 +47,15 @@ This page documents the schema as implemented in `backend/src/engine/yaml-loader
 | `retry.max_attempts` | number | no | `3` | Total attempts per poll, including the first. |
 | `retry.initial_delay` | duration | no | `1s` | Delay before the second attempt. |
 | `retry.max_delay` | duration | no | `15s` | Cap on any single delay. |
-| `retry.backoff` | string | no | | Accepted but ignored. Backoff is always exponential: the delay doubles after each failed attempt. |
+| `retry.backoff` | `exponential` \| `linear` \| `fixed` | no | `exponential` | How the delay grows. Any other value makes the file invalid. |
+
+The retry defaults come from `DEFAULT_RETRY` in `backend/src/engine/retry.ts`, the one policy shared by the scheduler and `fetchUrl()`. The delay after failed attempt *n* (1-based) is computed by `retryDelayMs()` and always capped at `max_delay`:
+
+| `backoff` | Delay after attempt *n* | With the defaults |
+| :-- | :-- | :-- |
+| `exponential` | `initial_delay × 2^(n-1)` | 1s, 2s, 4s, ... |
+| `linear` | `initial_delay × n` | 1s, 2s, 3s, ... |
+| `fixed` | `initial_delay` | 1s, 1s, 1s, ... |
 
 Any non-2xx response counts as a failed attempt. When every attempt fails, the error is logged as `Error polling source <name>` and the source is tried again on the next interval.
 
@@ -104,7 +114,7 @@ filter:
 
 | Field | Type | Required | Meaning |
 | :-- | :-- | :-- | :-- |
-| `external_id` | expression | **yes** | Stable id for the entity. Becomes `entities.id`. Records where it resolves to nothing or `""` are skipped. |
+| `external_id` | expression | **yes** | Stable id for the entity. Stored as `entities.id` in the form `<source name>:<external_id>`. Records where it resolves to nothing or `""` are skipped. |
 | `name` | expression | the loader does not check it | Display name. Falls back to the id when it resolves to nothing. |
 | `category` | string (literal) | no | One of the canonical categories below. If absent, `layer_type` is used, then `general`. |
 | `metadata` | map of key to expression | no | Values copied from the record into `entities.metadata`. Keys that resolve to nothing are dropped. |
@@ -121,7 +131,7 @@ filter:
 | `maritime` | ship, rotates to heading | `#4fc3f7` |
 | `atc_zone` | tower, plus a circle on the ground sized from `metadata.radius_km` (default 5 km) | `#b388ff` |
 
-Entity ids are not namespaced by source. If two sources emit the same id, they write to the same entity row.
+Entity ids are namespaced by source: the mapper stores `<name>:<external_id>` (for example `usgs_earthquakes:ci40669442`), so two feeds that reuse an external id never overwrite each other's rows. Observation ids and `observations.entity_id` use the same prefixed id.
 
 #### Derived fields
 
@@ -157,12 +167,32 @@ A derived field that resolves to nothing and has no `default` is omitted rather 
 | :-- | :-- | :-- | :-- | :-- |
 | `latitude` | expression | **yes** | | Decimal degrees. |
 | `longitude` | expression | **yes** | | Decimal degrees. |
-| `altitude` | expression | no | `0` | Stored as-is. The frontend treats it as metres above the ellipsoid. |
+| `altitude` | expression | no | `0` | Stored in metres; the frontend treats it as metres above the ellipsoid. Use `scale.altitude` when the feed reports another unit. |
 | `speed` | expression | no | `0` | Stored on observations only. |
 | `heading` | expression | no | `0` | Stored on observations only. The globe computes marker rotation from the entity's trail, not from this field. |
 | `timestamp` | expression | no | ingest time | Source time of the sample. |
+| `scale` | map of field to number | no | | Multiplies a resolved value by a constant. See below. |
 
 Latitude and longitude are converted with `parseFloat`. If either is missing or not a finite number, the record is skipped and counted in the warning `skipped N record(s) with missing id/coordinates`. It is never plotted at (0, 0). Unparseable altitude, speed or heading values become `0`.
+
+#### `observation.scale`
+
+`scale` converts units. Its keys must be among `latitude`, `longitude`, `altitude`, `speed` and `heading`, and each value must be a finite number; anything else makes the file invalid. The resolved field is multiplied by the factor before it is stored. A negative factor flips the sign. Metadata values are never scaled.
+
+```yaml
+observation:
+  altitude: 'alt_baro' # feet
+  scale:
+    altitude: 0.3048 # feet -> metres
+```
+
+The shipped sources use it for altitude only:
+
+| Source | Factor | Why |
+| :-- | :-- | :-- |
+| `iss_position` | `1000` | The feed reports kilometres. |
+| `usgs_earthquakes` | `-1000` | Depth is kilometres, positive-down. The quake is stored below the surface as negative metres; `metadata.depth` keeps the raw kilometre value. |
+| `adsb_military` | `0.3048` | `alt_baro` is feet. |
 
 Timestamps are normalized to ISO 8601:
 
@@ -192,8 +222,10 @@ Keys that contain dots cannot be addressed. There are no functions, conditionals
 
 | Mode | Observation rows | Observation id | Use for |
 | :-- | :-- | :-- | :-- |
-| `append` (default) | One per distinct instant, capped at the newest 200 per entity (`MAX_OBS_PER_ENTITY`). | `obs_<id>_<epoch_ms>` when the source provides a timestamp; otherwise `obs_<id>_<lat>_<lon>` with 4-decimal coordinates. | Moving tracks: aircraft, ships, the ISS. |
-| `upsert` | Exactly one per entity, overwritten on every poll. | `obs_<id>` | Current-state or reference data: earthquakes, sensors, facilities. |
+| `append` (default) | One per distinct instant, capped at the newest 200 per entity (`MAX_OBS_PER_ENTITY`). | `obs_<entity id>_<epoch_ms>` when the source provides a timestamp; otherwise `obs_<entity id>_<lat>_<lon>` with 4-decimal coordinates. | Moving tracks: aircraft, ships, the ISS. |
+| `upsert` | Exactly one per entity, overwritten on every poll. | `obs_<entity id>` | Current-state or reference data: earthquakes, sensors, facilities. |
+
+`<entity id>` is the prefixed `<name>:<external_id>`, for example `obs_iss_position:25544_1786644444000`.
 
 In `append` mode, a record that repeats an instant already stored is ignored (`INSERT OR IGNORE`, backed by the unique index on `(entity_id, timestamp)`). Without a source timestamp, the position-based id means a stationary target does not add a row on every poll, while any movement does.
 
@@ -225,7 +257,7 @@ transport:
   interval: '60s'
   retry:
     max_attempts: 3
-    backoff: exponential # ignored; backoff is always exponential
+    backoff: exponential # or linear / fixed
     initial_delay: '1s'
     max_delay: '15s'
 
@@ -249,6 +281,8 @@ observation:
   speed: '0' # literal constant
   heading: '0'
   timestamp: 'properties.time' # epoch milliseconds
+  scale:
+    altitude: -1000 # km positive-down -> metres below the surface
 
 recording:
   mode: upsert # one observation per quake, refreshed in place
@@ -269,19 +303,19 @@ the engine writes this entity:
 
 ```json
 {
-  "id": "ci40669442",
+  "id": "usgs_earthquakes:ci40669442",
   "source_id": "usgs_earthquakes",
   "category": "geological",
   "name": "3 km NNW of Murrieta, CA",
   "latitude": 33.5795,
   "longitude": -117.2311666666667,
-  "altitude": 15.07,
+  "altitude": -15070,
   "timestamp": "2026-08-09T17:38:15.660Z",
   "metadata": { "magnitude": 1.61, "depth": 15.07 }
 }
 ```
 
-and one observation with id `obs_ci40669442`, which is overwritten on later polls because the mode is `upsert`.
+and one observation with id `obs_usgs_earthquakes:ci40669442`, which is overwritten on later polls because the mode is `upsert`.
 
 ## Sources in `sources.d/`
 
@@ -301,14 +335,7 @@ These five files are loaded by default.
 
 [`skills/onboard-source/SKILL.md`](../skills/onboard-source/SKILL.md) is an agent skill: point your coding agent at it with a URL, and it fetches the endpoint, works out the format and record path, maps the fields and writes `sources.d/<name>.yaml`.
 
-Check the skill's output against this page before relying on it. Its reference template is written for a richer "schema v2" format that this engine does not implement:
-
-- Mapping values written as CEL expressions (`record.id`, `has(...)`, `double(...)`, `unix_ms(...)`) are treated as plain paths and will not resolve. Write bare paths instead, such as `id`, `properties.place` or `geometry.coordinates[1]`.
-- A `filter` written as a CEL string is ignored, because the engine expects a list of `{ field, in, not_empty }` rules.
-- `labels`, `max_response_bytes`, `observation.velocity`, `observation.metadata`, `content_hash`, `cache`, `display` and `history` are ignored.
-- The skill writes to a hard-coded absolute path from the original author's machine. Tell your agent to write to `sources.d/` in your checkout.
-
-A quick way to steer it: *"Use skills/onboard-source to add `<URL>`, but follow the schema in docs/data-sources.md and the examples in skills/onboard-source/examples/."*
+The skill describes the same schema as this page (`schema_version: 1`, bare paths, `filter` rules, `observation.scale`, the three `backoff` values) and writes into `sources.d/` in your checkout. For example: *"Use skills/onboard-source to add `<URL>`."*
 
 After adding a file, restart the backend and watch its log for `Skipping invalid source definition`, `non-canonical entity.category`, `Error polling source` or `skipped N record(s)`. Then check `GET /api/entities?source_id=<name>`.
 
@@ -318,7 +345,7 @@ After adding a file, restart the backend and watch its log for `Skipping invalid
 
 | File | Category | Format | Feed |
 | :-- | :-- | :-- | :-- |
-| `adsb_military.yaml` | aircraft | json | api.adsb.lol military |
+| `adsb_military.yaml` | aircraft | json | opendata.adsb.fi military |
 | `adsb_theairtraffic_flights.yaml` | aircraft | json | globe.theairtraffic.com |
 | `aviationweather_sigmets.yaml` | aircraft | json | aviationweather.gov SIGMETs |
 | `bellingcat_ukraine.yaml` | geological | json | Bellingcat Ukraine civilian harm |
@@ -338,4 +365,4 @@ After adding a file, restart the backend and watch its log for `Skipping invalid
 | `wikidata_nuclear_facilities.yaml` | radiation | json | Wikidata SPARQL (nuclear facilities) |
 | `wri_power_plants.yaml` | radiation | csv | WRI Global Power Plant Database |
 
-Several examples map a non-matching feed onto the closest canonical category so it gets a marker. For instance, military bases and airports use `aircraft`, and power plants use `radiation`. Some examples also differ from the tuned copies in `sources.d/`. The example `adsb_military.yaml`, for instance, still points at `api.adsb.lol/v2/mil`, which the `sources.d/` version replaced because it was returning an empty list.
+Several examples map a non-matching feed onto the closest canonical category so it gets a marker. For instance, military bases and airports use `aircraft`, and power plants use `radiation`.
