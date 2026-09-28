@@ -55,10 +55,23 @@ export const App: FC = () => {
           zIndex: (theme) => theme.zIndex.modal + 1,
           flexShrink: 0,
           background: 'rgba(0,0,0,0.85)',
-          borderBottom: '1px solid #1f2937'
+          // Inset shadow, not a border: a border adds 1px and the header would overlap the drawers.
+          boxShadow: 'inset 0 -1px 0 #1f2937'
         }}
       >
-        <Toolbar variant="dense" sx={{ gap: 1, minHeight: HUD_HEADER_HEIGHT }}>
+        {/* Exactly HUD_HEADER_HEIGHT, one row: the drawers are pinned at `top: HUD_HEADER_HEIGHT`,
+            so a header that wrapped taller would slide over the top of the inspector. */}
+        <Toolbar
+          variant="dense"
+          sx={{
+            gap: 1,
+            height: HUD_HEADER_HEIGHT,
+            minHeight: HUD_HEADER_HEIGHT,
+            flexWrap: 'nowrap',
+            overflowX: 'auto',
+            overflowY: 'hidden'
+          }}
+        >
           <IconButton
             edge="start"
             color="inherit"

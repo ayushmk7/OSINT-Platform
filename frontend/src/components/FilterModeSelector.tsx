@@ -26,7 +26,7 @@ export const FilterModeSelector: FC = () => {
       <Typography
         variant="caption"
         noWrap
-        sx={{ color: 'text.secondary', fontWeight: 'bold', display: { xs: 'none', md: 'block' } }}
+        sx={{ color: 'text.secondary', fontWeight: 'bold', display: { xs: 'none', xl: 'block' } }}
       >
         VISUAL FILTER:
       </Typography>
@@ -53,20 +53,28 @@ export const FilterModeSelector: FC = () => {
         }}
       >
         <ToggleButton value="none" aria-label="off">
-          <PowerSettingsNewIcon fontSize="small" sx={{ mr: 0.5 }} />
-          OFF
+          <PowerSettingsNewIcon fontSize="small" sx={{ mr: { xs: 0, lg: 0.5 } }} />
+          <Box component="span" sx={{ display: { xs: 'none', lg: 'inline' } }}>
+            OFF
+          </Box>
         </ToggleButton>
         <ToggleButton value="crt" aria-label="crt">
-          <TvIcon fontSize="small" sx={{ mr: 0.5 }} />
-          CRT
+          <TvIcon fontSize="small" sx={{ mr: { xs: 0, lg: 0.5 } }} />
+          <Box component="span" sx={{ display: { xs: 'none', lg: 'inline' } }}>
+            CRT
+          </Box>
         </ToggleButton>
         <ToggleButton value="night_vision" aria-label="night vision">
-          <VisibilityIcon fontSize="small" sx={{ mr: 0.5 }} />
-          NVG
+          <VisibilityIcon fontSize="small" sx={{ mr: { xs: 0, lg: 0.5 } }} />
+          <Box component="span" sx={{ display: { xs: 'none', lg: 'inline' } }}>
+            NVG
+          </Box>
         </ToggleButton>
         <ToggleButton value="flir" aria-label="flir thermal">
-          <LocalFireDepartmentIcon fontSize="small" sx={{ mr: 0.5 }} />
-          FLIR
+          <LocalFireDepartmentIcon fontSize="small" sx={{ mr: { xs: 0, lg: 0.5 } }} />
+          <Box component="span" sx={{ display: { xs: 'none', lg: 'inline' } }}>
+            FLIR
+          </Box>
         </ToggleButton>
       </ToggleButtonGroup>
     </Box>

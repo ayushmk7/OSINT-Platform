@@ -41,7 +41,7 @@ export const GlobeStyleSelector: FC = () => {
       <Typography
         variant="caption"
         noWrap
-        sx={{ color: 'text.secondary', fontWeight: 'bold', display: { xs: 'none', lg: 'block' } }}
+        sx={{ color: 'text.secondary', fontWeight: 'bold', display: { xs: 'none', xl: 'block' } }}
       >
         GLOBE:
       </Typography>
