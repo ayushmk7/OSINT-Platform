@@ -104,6 +104,9 @@ function upsertZone(
   }
 }
 
+/** Camera height above the target for insight fly-to: regional context, marker still legible. */
+const FLY_TO_HEIGHT_M = 1_500_000;
+
 export const GlobeView: FC = () => {
   const dispatch = useAppDispatch();
   const entities = useAppSelector((s) => s.entities.entities);
@@ -124,6 +127,8 @@ export const GlobeView: FC = () => {
   const zonesById = useRef<Map<string, Cesium.Entity>>(new Map());
   const globeStyleRef = useRef<GlobeStyleController | null>(null);
   const ringRef = useRef<Cesium.Billboard | null>(null);
+  const spinningRef = useRef(true);
+  const flyTo = useAppSelector((s) => s.insights.flyTo);
 
   // Mount once: create the viewer, the billboard layer, and the click handler.
   useEffect(() => {
@@ -219,14 +224,14 @@ export const GlobeView: FC = () => {
     // zoom feel natural. camera.rotate marks the scene dirty each tick, so it still renders
     // under requestRenderMode. LEFT_DOWN fires before LEFT_CLICK, so clicking a marker both
     // stops the spin AND selects the entity.
-    let spinning = true;
+    spinningRef.current = true;
     const onTick = () => {
-      if (spinning) viewer.scene.camera.rotate(Cesium.Cartesian3.UNIT_Z, -SPIN_PER_TICK);
+      if (spinningRef.current) viewer.scene.camera.rotate(Cesium.Cartesian3.UNIT_Z, -SPIN_PER_TICK);
     };
     viewer.clock.onTick.addEventListener(onTick);
 
     const stopSpin = () => {
-      spinning = false;
+      spinningRef.current = false;
     };
     handler.setInputAction(stopSpin, Cesium.ScreenSpaceEventType.LEFT_DOWN);
     handler.setInputAction(stopSpin, Cesium.ScreenSpaceEventType.WHEEL);
@@ -266,6 +271,24 @@ export const GlobeView: FC = () => {
     viewer.scene.globe.maximumScreenSpaceError = lodEnabled ? 8 : 2;
     viewer.scene.requestRender();
   }, [lodEnabled]);
+
+  // Fly-to requests (e.g. clicking an AI insight). Keyed on the request only: a later entity
+  // update must not yank the camera back.
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!flyTo || !viewer || viewer.isDestroyed()) return;
+    const target = entities[flyTo.entityId];
+    if (!target) return;
+    spinningRef.current = false;
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(
+        target.longitude,
+        target.latitude,
+        Math.max(renderHeight(target.altitude), 0) + FLY_TO_HEIGHT_M
+      ),
+      duration: 1.8
+    });
+  }, [flyTo]);
 
   // Upsert billboards whenever entities / filters / selection change.
   useEffect(() => {

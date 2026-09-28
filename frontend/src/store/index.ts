@@ -3,6 +3,7 @@ import { useDispatch, useSelector, type TypedUseSelectorHook } from 'react-redux
 import entitiesReducer from './slices/entitiesSlice';
 import sourcesReducer from './slices/sourcesSlice';
 import filterReducer from './slices/filterSlice';
+import insightsReducer from './slices/insightsSlice';
 import { osintApi } from './api/osintApi';
 
 export const store = configureStore({
@@ -10,6 +11,7 @@ export const store = configureStore({
     entities: entitiesReducer,
     sources: sourcesReducer,
     filter: filterReducer,
+    insights: insightsReducer,
     [osintApi.reducerPath]: osintApi.reducer
   },
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(osintApi.middleware)
