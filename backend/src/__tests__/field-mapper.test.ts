@@ -32,7 +32,7 @@ describe('Field Mapper', () => {
 
     const result = mapRecord(rawRecord, dummyConfig, 'src-123');
     expect(result).not.toBeNull();
-    expect(result!.entity.id).toBe('us7000abc');
+    expect(result!.entity.id).toBe('src-123:us7000abc');
     expect(result!.entity.name).toBe('San Francisco, CA');
     expect(result!.entity.category).toBe('geological');
     expect(result!.observation.latitude).toBe(37.7749);
@@ -116,8 +116,8 @@ describe('Field Mapper', () => {
       recording: { mode: 'append' }
     };
     const upsertCfg: SourceConfig = { ...appendCfg, recording: { mode: 'upsert' } };
-    expect(mapRecord(raw, upsertCfg, 's')!.observation.id).toBe('obs_e1');
-    expect(mapRecord(raw, appendCfg, 's')!.observation.id).toBe('obs_e1_1700000000000');
+    expect(mapRecord(raw, upsertCfg, 's')!.observation.id).toBe('obs_s:e1');
+    expect(mapRecord(raw, appendCfg, 's')!.observation.id).toBe('obs_s:e1_1700000000000');
   });
 
   it('should key append observations on rounded position when the source has no timestamp', () => {
@@ -137,6 +137,48 @@ describe('Field Mapper', () => {
     expect(a.observation.id).toBe(b.observation.id);
     expect(a.observation.id).not.toBe(moved.observation.id);
     expect(a.observation.id).not.toMatch(/undefined|NaN/);
+  });
+
+  it('namespaces entity and observation ids by source so sources cannot collide', () => {
+    const raw = { id: 'e1', latitude: 1, longitude: 2, ts: 1700000000000 };
+    const cfg: SourceConfig = {
+      ...dummyConfig,
+      entity: { external_id: 'id', name: 'id', category: 'aircraft' },
+      observation: { latitude: 'latitude', longitude: 'longitude', timestamp: 'ts' },
+      recording: { mode: 'upsert' }
+    };
+    const a = mapRecord(raw, cfg, 'src_a')!;
+    const b = mapRecord(raw, cfg, 'src_b')!;
+    expect(a.entity.id).toBe('src_a:e1');
+    expect(a.observation.entity_id).toBe('src_a:e1');
+    expect(a.entity.id).not.toBe(b.entity.id);
+    expect(a.observation.id).not.toBe(b.observation.id);
+  });
+
+  it('applies observation.scale factors to numeric observation fields', () => {
+    const cfg: SourceConfig = {
+      ...dummyConfig,
+      observation: {
+        latitude: 'geometry.coordinates[1]',
+        longitude: 'geometry.coordinates[0]',
+        altitude: 'geometry.coordinates[2]',
+        speed: 'v',
+        timestamp: 'properties.time',
+        scale: { altitude: -1000, speed: 0.5 }
+      }
+    };
+    const raw = {
+      id: 'q1',
+      v: 10,
+      properties: { place: 'x', time: 1700000000000 },
+      geometry: { coordinates: [-122.4, 37.7, 10.5] }
+    };
+    const result = mapRecord(raw, cfg, 'quakes')!;
+    expect(result.observation.altitude).toBe(-10500);
+    expect(result.entity.altitude).toBe(-10500);
+    expect(result.observation.speed).toBe(5);
+    // Unscaled fields are untouched.
+    expect(result.observation.latitude).toBe(37.7);
   });
 });
 
@@ -259,7 +301,7 @@ describe('Field Mapper — derived metadata', () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result!.entity.id).toBe('EGLL');
+    expect(result!.entity.id).toBe('atc_facilities:EGLL');
     expect(result!.entity.category).toBe('atc_zone');
     expect(result!.observation.latitude).toBeCloseTo(51.4706, 4);
     expect(result!.entity.metadata.icao).toBe('EGLL');
@@ -268,6 +310,6 @@ describe('Field Mapper — derived metadata', () => {
     expect(result!.entity.metadata.zone_note).toBe(
       'approximate control-zone radius, illustrative only'
     );
-    expect(result!.observation.id).toBe('obs_EGLL'); // upsert: one row per facility
+    expect(result!.observation.id).toBe('obs_atc_facilities:EGLL'); // upsert: one row per facility
   });
 });

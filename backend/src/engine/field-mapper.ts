@@ -1,4 +1,4 @@
-import { DerivedField, FilterRule, SourceConfig } from './yaml-loader';
+import { DerivedField, FilterRule, ScalableObservationField, SourceConfig } from './yaml-loader';
 
 export interface EntityRecord {
   id: string;
@@ -198,18 +198,27 @@ export function mapRecord(
     return null; // no stable identity -> skip (do not invent a random id)
   }
   const extId = String(extIdRaw);
+  // Stored ids are namespaced by source so two feeds that reuse an external id (e.g. "1")
+  // never overwrite each other's entity or observation rows.
+  const entityId = `${sourceId}:${extId}`;
   const name = String(resolveValue(raw, config.entity.name) ?? extId);
+  const scale = config.observation.scale ?? {};
+  const scaled = (field: ScalableObservationField, n: number): number => {
+    const factor = scale[field];
+    return typeof factor === 'number' && Number.isFinite(factor) ? n * factor : n;
+  };
   const category = config.entity.category || config.layer_type || 'general';
 
-  const lat = toNumber(resolveValue(raw, config.observation.latitude));
-  const lon = toNumber(resolveValue(raw, config.observation.longitude));
+  const lat = scaled('latitude', toNumber(resolveValue(raw, config.observation.latitude)));
+  const lon = scaled('longitude', toNumber(resolveValue(raw, config.observation.longitude)));
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
     return null; // missing/invalid position -> skip (never plot at 0,0)
   }
 
-  const alt = toNumberOrZero(resolveValue(raw, config.observation.altitude));
-  const speed = toNumberOrZero(resolveValue(raw, config.observation.speed));
-  const heading = toNumberOrZero(resolveValue(raw, config.observation.heading));
+  // Altitude is always stored in metres; use `observation.scale.altitude` to convert.
+  const alt = scaled('altitude', toNumberOrZero(resolveValue(raw, config.observation.altitude)));
+  const speed = scaled('speed', toNumberOrZero(resolveValue(raw, config.observation.speed)));
+  const heading = scaled('heading', toNumberOrZero(resolveValue(raw, config.observation.heading)));
 
   const {
     ms: tsMs,
@@ -227,7 +236,7 @@ export function mapRecord(
   Object.assign(metadata, computeDerived(raw, config.entity.derived));
 
   const entity: EntityRecord = {
-    id: extId,
+    id: entityId,
     source_id: sourceId,
     category,
     name,
@@ -246,16 +255,16 @@ export function mapRecord(
   const mode = config.recording?.mode ?? 'append';
   let obsId: string;
   if (mode === 'upsert') {
-    obsId = `obs_${extId}`;
+    obsId = `obs_${entityId}`;
   } else if (tsFromSource) {
-    obsId = `obs_${extId}_${tsMs}`;
+    obsId = `obs_${entityId}_${tsMs}`;
   } else {
-    obsId = `obs_${extId}_${lat.toFixed(4)}_${lon.toFixed(4)}`;
+    obsId = `obs_${entityId}_${lat.toFixed(4)}_${lon.toFixed(4)}`;
   }
 
   const observation: ObservationRecord = {
     id: obsId,
-    entity_id: extId,
+    entity_id: entityId,
     source_id: sourceId,
     latitude: lat,
     longitude: lon,

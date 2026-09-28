@@ -43,6 +43,9 @@ observation:
   altitude: 'alt_baro'
   speed: 'gs'
   heading: 'track'
+  # alt_baro is feet (or the string "ground" -> 0); the engine stores metres.
+  scale:
+    altitude: 0.3048
   # No source timestamp field is mapped: the mapper stamps ingest time and the append
   # dedup/retention keep the track bounded. NEVER map a field to the literal "now".
 

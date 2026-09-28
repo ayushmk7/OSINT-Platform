@@ -1,6 +1,7 @@
 import http from 'http';
 import type { AddressInfo } from 'net';
 import { fetchUrl } from '../engine/http-fetcher';
+import { DEFAULT_RETRY, retryDelayMs } from '../engine/retry';
 
 /**
  * Spin up a throwaway localhost server so retry/timeout/error behaviour is asserted
@@ -96,4 +97,19 @@ describe('HTTP Fetcher', () => {
       await server.close();
     }
   }, 15000);
+
+  it('uses one shared default retry policy (1s initial, exponential)', () => {
+    expect(DEFAULT_RETRY.initialDelayMs).toBe(1000);
+    expect(DEFAULT_RETRY.backoff).toBe('exponential');
+    expect(DEFAULT_RETRY.maxAttempts).toBe(3);
+    expect(DEFAULT_RETRY.maxDelayMs).toBe(15000);
+  });
+
+  it('computes exponential, linear and fixed backoff delays, capped at maxDelayMs', () => {
+    const delays = (backoff: 'exponential' | 'linear' | 'fixed') =>
+      [1, 2, 3, 4].map((attempt) => retryDelayMs(attempt, backoff, 100, 350));
+    expect(delays('exponential')).toEqual([100, 200, 350, 350]);
+    expect(delays('linear')).toEqual([100, 200, 300, 350]);
+    expect(delays('fixed')).toEqual([100, 100, 100, 100]);
+  });
 });

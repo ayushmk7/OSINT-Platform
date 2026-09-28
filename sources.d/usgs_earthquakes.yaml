@@ -39,6 +39,10 @@ observation:
   speed: '0'
   heading: '0'
   timestamp: 'properties.time'
+  # USGS depth is km, positive-down; the engine stores altitude in metres, so a quake 10 km
+  # deep is stored at -10000 m. `metadata.depth` keeps the raw km value for display.
+  scale:
+    altitude: -1000
 
 # Current-state feed: one observation row per quake, refreshed in place.
 recording:

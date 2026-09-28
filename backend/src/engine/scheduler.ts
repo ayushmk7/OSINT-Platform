@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { fetchUrl } from './http-fetcher';
+import { DEFAULT_RETRY } from './retry';
 import { EntityRecord, mapRecord, passesFilter } from './field-mapper';
 import { parsePayload } from './parsers';
 import { SourceConfig, loadSourcesFromDir, parseDurationSeconds } from './yaml-loader';
@@ -28,9 +29,13 @@ export class IngestionScheduler {
     return this.configs;
   }
 
-  /** Load every source definition and register/refresh its row in `sources`. */
+  /**
+   * Load every source definition and register/refresh its row in `sources`. A source whose
+   * row cannot be written is logged and dropped (never polled) instead of aborting startup.
+   */
   public initSources(): SourceConfig[] {
-    this.configs = loadSourcesFromDir(this.sourcesDir);
+    const loaded = loadSourcesFromDir(this.sourcesDir);
+    const registered: SourceConfig[] = [];
 
     const stmt = this.db.prepare(`
       INSERT INTO sources (id, name, type, transport, url, update_interval_sec, enabled)
@@ -44,18 +49,24 @@ export class IngestionScheduler {
         enabled = excluded.enabled
     `);
 
-    for (const config of this.configs) {
-      stmt.run(
-        config.name,
-        config.display_name || config.name,
-        config.source_type,
-        config.transport.type,
-        config.transport.url,
-        parseDurationSeconds(config.transport.interval, 60),
-        config.enabled !== false ? 1 : 0
-      );
+    for (const config of loaded) {
+      try {
+        stmt.run(
+          config.name,
+          config.display_name || config.name,
+          config.source_type,
+          config.transport.type,
+          config.transport.url,
+          parseDurationSeconds(config.transport.interval, 60),
+          config.enabled !== false ? 1 : 0
+        );
+        registered.push(config);
+      } catch (err) {
+        console.error(`Failed to register source ${config.name}; it will not be polled:`, err);
+      }
     }
 
+    this.configs = registered;
     return this.configs;
   }
 
@@ -71,9 +82,16 @@ export class IngestionScheduler {
         method: config.transport.method || 'GET',
         headers: config.transport.headers,
         timeoutMs: parseDurationSeconds(config.transport.timeout, 10) * 1000,
-        maxAttempts: config.transport.retry?.max_attempts ?? 3,
-        initialDelayMs: parseDurationSeconds(config.transport.retry?.initial_delay, 1) * 1000,
-        maxDelayMs: parseDurationSeconds(config.transport.retry?.max_delay, 15) * 1000
+        maxAttempts: config.transport.retry?.max_attempts ?? DEFAULT_RETRY.maxAttempts,
+        initialDelayMs:
+          parseDurationSeconds(
+            config.transport.retry?.initial_delay,
+            DEFAULT_RETRY.initialDelayMs / 1000
+          ) * 1000,
+        maxDelayMs:
+          parseDurationSeconds(config.transport.retry?.max_delay, DEFAULT_RETRY.maxDelayMs / 1000) *
+          1000,
+        backoff: config.transport.retry?.backoff ?? DEFAULT_RETRY.backoff
       });
 
       const rawRecords = parsePayload(

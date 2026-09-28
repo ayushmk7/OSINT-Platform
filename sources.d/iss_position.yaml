@@ -38,6 +38,9 @@ observation:
   speed: 'velocity'
   heading: '0'
   timestamp: 'timestamp'
+  # The feed reports altitude in km; the engine stores metres.
+  scale:
+    altitude: 1000
 
 # Historical track: the feed carries a real per-sample timestamp, so each distinct
 # instant becomes one track point and repeat polls of the same instant are no-ops.

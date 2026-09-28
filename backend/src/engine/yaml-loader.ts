@@ -1,6 +1,20 @@
 import fs from 'fs';
 import path from 'path';
 import YAML from 'yaml';
+import { BACKOFF_STRATEGIES, BackoffStrategy } from './retry';
+
+/** `schema_version` values this engine understands. Absent is treated as 1. */
+export const SUPPORTED_SCHEMA_VERSIONS = [1] as const;
+
+/** Numeric observation fields that accept an `observation.scale` multiplier. */
+export const SCALABLE_OBSERVATION_FIELDS = [
+  'latitude',
+  'longitude',
+  'altitude',
+  'speed',
+  'heading'
+] as const;
+export type ScalableObservationField = (typeof SCALABLE_OBSERVATION_FIELDS)[number];
 
 /**
  * The canonical `entities.category` enum. This is the ONE place the list lives on the
@@ -66,7 +80,7 @@ export interface SourceConfig {
     interval: string | number;
     retry?: {
       max_attempts?: number;
-      backoff?: string;
+      backoff?: BackoffStrategy;
       initial_delay?: string;
       max_delay?: string;
     };
@@ -93,6 +107,11 @@ export interface SourceConfig {
     speed?: string;
     heading?: string;
     timestamp?: string;
+    /**
+     * Multiply a resolved numeric field by a constant, e.g. `{ altitude: 1000 }` for a km feed.
+     * The engine stores altitude in metres; a negative factor flips sign (depth -> below surface).
+     */
+    scale?: Partial<Record<ScalableObservationField, number>>;
   };
   recording?: {
     mode?: 'upsert' | 'append';
@@ -125,23 +144,91 @@ export function parseDurationSeconds(value: string | number | undefined, fallbac
   }
 }
 
-/** Reject configs that would blow up further down the pipeline. */
-function isValidConfig(config: unknown): config is SourceConfig {
-  const candidate = config as SourceConfig | null;
-  return Boolean(
-    candidate &&
-    typeof candidate === 'object' &&
-    typeof candidate.name === 'string' &&
-    candidate.transport &&
-    typeof candidate.transport.url === 'string' &&
-    candidate.parser &&
-    typeof candidate.parser.format === 'string' &&
-    candidate.entity &&
-    typeof candidate.entity.external_id === 'string' &&
-    candidate.observation &&
-    typeof candidate.observation.latitude === 'string' &&
-    typeof candidate.observation.longitude === 'string'
-  );
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+/**
+ * Return every problem that would make this config fail further down the pipeline (an empty
+ * list means it is usable). Covers every field the `sources` table stores as NOT NULL
+ * (`name` -> id, `source_type` -> type, `transport.type` -> transport, `transport.url` -> url;
+ * `display_name` falls back to `name`, `interval` to 60s), plus what the mapper needs.
+ */
+export function validateSourceConfig(config: unknown): string[] {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    return ['file does not contain a YAML mapping'];
+  }
+  const c = config as Partial<SourceConfig> & Record<string, unknown>;
+  const errors: string[] = [];
+  const requireString = (value: unknown, label: string): void => {
+    if (!isNonEmptyString(value)) errors.push(`missing or empty required field "${label}"`);
+  };
+
+  if (
+    c.schema_version !== undefined &&
+    !(SUPPORTED_SCHEMA_VERSIONS as readonly unknown[]).includes(c.schema_version)
+  ) {
+    errors.push(
+      `unsupported schema_version ${JSON.stringify(c.schema_version)} ` +
+        `(supported: ${SUPPORTED_SCHEMA_VERSIONS.join(', ')})`
+    );
+  }
+
+  requireString(c.name, 'name');
+  requireString(c.source_type, 'source_type');
+
+  const transport = c.transport;
+  if (!transport || typeof transport !== 'object') {
+    errors.push('missing required section "transport"');
+  } else {
+    requireString(transport.type, 'transport.type');
+    requireString(transport.url, 'transport.url');
+    const backoff = transport.retry?.backoff;
+    if (backoff !== undefined && !(BACKOFF_STRATEGIES as readonly unknown[]).includes(backoff)) {
+      errors.push(
+        `invalid retry.backoff ${JSON.stringify(backoff)} ` +
+          `(expected one of: ${BACKOFF_STRATEGIES.join(', ')})`
+      );
+    }
+  }
+
+  if (!c.parser || typeof c.parser !== 'object') {
+    errors.push('missing required section "parser"');
+  } else {
+    requireString(c.parser.format, 'parser.format');
+  }
+
+  if (!c.entity || typeof c.entity !== 'object') {
+    errors.push('missing required section "entity"');
+  } else {
+    requireString(c.entity.external_id, 'entity.external_id');
+  }
+
+  const observation = c.observation;
+  if (!observation || typeof observation !== 'object') {
+    errors.push('missing required section "observation"');
+  } else {
+    requireString(observation.latitude, 'observation.latitude');
+    requireString(observation.longitude, 'observation.longitude');
+    if (observation.scale !== undefined) {
+      if (!observation.scale || typeof observation.scale !== 'object') {
+        errors.push('observation.scale must be a mapping of field -> number');
+      } else {
+        for (const [field, factor] of Object.entries(observation.scale)) {
+          if (!(SCALABLE_OBSERVATION_FIELDS as readonly string[]).includes(field)) {
+            errors.push(
+              `observation.scale.${field} is not a scalable field ` +
+                `(expected one of: ${SCALABLE_OBSERVATION_FIELDS.join(', ')})`
+            );
+          } else if (typeof factor !== 'number' || !Number.isFinite(factor)) {
+            errors.push(`observation.scale.${field} must be a finite number`);
+          }
+        }
+      }
+    }
+  }
+
+  return errors;
 }
 
 /**
@@ -162,8 +249,10 @@ export function loadSourcesFromDir(dirPath: string): SourceConfig[] {
     const filePath = path.join(dirPath, file);
     try {
       const fileContent = fs.readFileSync(filePath, 'utf8');
-      const parsed = YAML.parse(fileContent);
-      if (isValidConfig(parsed)) {
+      const raw: unknown = YAML.parse(fileContent);
+      const errors = validateSourceConfig(raw);
+      if (errors.length === 0) {
+        const parsed = raw as SourceConfig;
         // A non-canonical category still loads (the engine is data-driven and must not
         // hard-fail on a new layer), but it is surfaced loudly because the frontend has no
         // marker for it.
@@ -175,7 +264,7 @@ export function loadSourcesFromDir(dirPath: string): SourceConfig[] {
         }
         configs.push(parsed);
       } else {
-        console.warn(`Skipping invalid source definition (missing required fields): ${filePath}`);
+        console.error(`Skipping invalid source definition ${filePath}: ${errors.join('; ')}`);
       }
     } catch (err) {
       console.error(`Failed to parse source definition ${filePath}:`, err);
