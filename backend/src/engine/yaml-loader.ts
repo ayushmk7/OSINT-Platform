@@ -2,6 +2,16 @@ import fs from 'fs';
 import path from 'path';
 import YAML from 'yaml';
 import { BACKOFF_STRATEGIES, BackoffStrategy } from './retry';
+import { collectExpressionErrors } from './expressions';
+import { resolveLookups } from './lookups';
+import type { ParserOptions, SupportedFormat } from './parsers/types';
+
+/** `recording.mode` values. `dedupe` = content-hash identity + INSERT OR IGNORE. */
+export const RECORDING_MODES = ['upsert', 'append', 'dedupe'] as const;
+export type RecordingMode = (typeof RECORDING_MODES)[number];
+
+/** `parser.format` values the engine can parse. */
+export const PARSER_FORMATS = ['json', 'geojson', 'xml', 'csv', 'rss', 'tle', 'omm_json'] as const;
 
 /** `schema_version` values this engine understands. Absent is treated as 1. */
 export const SUPPORTED_SCHEMA_VERSIONS = [1] as const;
@@ -42,7 +52,9 @@ export function isEntityCategory(value: unknown): value is EntityCategory {
  */
 export interface FilterRule {
   /** Path into the raw record, same syntax as the entity/observation mappings. */
-  field: string;
+  field?: string;
+  /** Expression (see expressions.ts) that must be truthy, e.g. "mag >= 2.5". */
+  expr?: string;
   /** Value must be one of these (string-compared). */
   in?: Array<string | number>;
   /** Value must be present and not an empty/whitespace-only string. */
@@ -78,6 +90,8 @@ export interface SourceConfig {
     headers?: Record<string, string>;
     timeout?: string | number;
     interval: string | number;
+    /** Orbital formats (tle/omm_json): re-propagate cached elements this often, no refetch. */
+    propagate_interval?: string | number;
     retry?: {
       max_attempts?: number;
       backoff?: BackoffStrategy;
@@ -85,11 +99,16 @@ export interface SourceConfig {
       max_delay?: string;
     };
   };
-  parser: {
-    format: 'json' | 'geojson' | 'xml' | 'csv';
+  parser: ParserOptions & {
+    format: SupportedFormat;
     records_path?: string;
     max_records?: number;
   };
+  /**
+   * Named tables for the `lookup(table, key, default)` expression helper: an inline map, or a
+   * .json/.csv path relative to the sources directory (resolved to a map at load time).
+   */
+  lookups?: Record<string, Record<string, unknown> | string>;
   /** Record-level predicates; ALL must hold. Absent = every record is accepted. */
   filter?: FilterRule[];
   entity: {
@@ -112,9 +131,15 @@ export interface SourceConfig {
      * The engine stores altitude in metres; a negative factor flips sign (depth -> below surface).
      */
     scale?: Partial<Record<ScalableObservationField, number>>;
+    /** true: records whose lat/lon do not resolve are dropped silently (counted, not warned). */
+    optional?: boolean;
   };
   recording?: {
-    mode?: 'upsert' | 'append';
+    mode?: RecordingMode;
+    /** dedupe mode: paths/`=expr` whose values form the identity hash. Default: mapped entity. */
+    dedupe_fields?: string[];
+    /** Ignore records whose source timestamp is older than this ('30m', '7d', seconds). */
+    max_age?: string | number;
   };
 }
 
@@ -126,7 +151,7 @@ export function parseDurationSeconds(value: string | number | undefined, fallbac
   if (value === undefined || value === null) return fallback;
   if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : fallback;
 
-  const match = /^\s*(\d+(?:\.\d+)?)\s*(ms|s|m|h)?\s*$/i.exec(value);
+  const match = /^\s*(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)?\s*$/i.exec(value);
   if (!match) return fallback;
 
   const amount = Number(match[1]);
@@ -139,6 +164,8 @@ export function parseDurationSeconds(value: string | number | undefined, fallbac
       return Math.round(amount * 60);
     case 'h':
       return Math.round(amount * 3600);
+    case 'd':
+      return Math.round(amount * 86400);
     default:
       return Math.round(amount);
   }
@@ -228,6 +255,87 @@ export function validateSourceConfig(config: unknown): string[] {
     }
   }
 
+  errors.push(...validateParsingAndRecording(c));
+  return errors;
+}
+
+/**
+ * Validation for parser formats/options, recording modes, filter rules and expressions.
+ * Kept separate from the core field checks above.
+ */
+function validateParsingAndRecording(c: Record<string, unknown>): string[] {
+  const errors: string[] = [];
+  const parser = c.parser as Record<string, unknown> | undefined;
+  if (parser && typeof parser === 'object') {
+    if (
+      isNonEmptyString(parser.format) &&
+      !(PARSER_FORMATS as readonly string[]).includes(parser.format)
+    ) {
+      errors.push(
+        `unsupported parser.format "${parser.format}" (expected one of: ${PARSER_FORMATS.join(', ')})`
+      );
+    }
+    const csv = parser.csv as Record<string, unknown> | undefined;
+    if (csv !== undefined) {
+      if (!csv || typeof csv !== 'object' || Array.isArray(csv)) {
+        errors.push('parser.csv must be a mapping');
+      } else {
+        if (csv.delimiter !== undefined && !isNonEmptyString(csv.delimiter)) {
+          errors.push('parser.csv.delimiter must be a non-empty string');
+        }
+        if (csv.columns !== undefined && !Array.isArray(csv.columns)) {
+          errors.push('parser.csv.columns must be a list of names');
+        }
+        if (
+          csv.skip_lines !== undefined &&
+          !(Number.isInteger(csv.skip_lines) && (csv.skip_lines as number) >= 0)
+        ) {
+          errors.push('parser.csv.skip_lines must be a non-negative integer');
+        }
+      }
+    }
+    const cols = parser.array_columns;
+    if (cols !== undefined && cols !== 'header' && !Array.isArray(cols)) {
+      errors.push("parser.array_columns must be a list of names or 'header'");
+    }
+  }
+
+  const recording = c.recording as Record<string, unknown> | undefined;
+  if (recording && typeof recording === 'object') {
+    if (
+      recording.mode !== undefined &&
+      !(RECORDING_MODES as readonly unknown[]).includes(recording.mode)
+    ) {
+      errors.push(
+        `invalid recording.mode ${JSON.stringify(recording.mode)} ` +
+          `(expected one of: ${RECORDING_MODES.join(', ')})`
+      );
+    }
+    if (recording.dedupe_fields !== undefined && !Array.isArray(recording.dedupe_fields)) {
+      errors.push('recording.dedupe_fields must be a list of paths/expressions');
+    }
+    if (
+      recording.max_age !== undefined &&
+      parseDurationSeconds(recording.max_age as string | number, -1) <= 0
+    ) {
+      errors.push(`invalid recording.max_age ${JSON.stringify(recording.max_age)}`);
+    }
+  }
+
+  if (c.filter !== undefined) {
+    if (!Array.isArray(c.filter)) {
+      errors.push('filter must be a list of rules');
+    } else {
+      c.filter.forEach((rule: unknown, i: number) => {
+        const r = rule as Record<string, unknown> | null;
+        if (!r || typeof r !== 'object' || (r.field === undefined && r.expr === undefined)) {
+          errors.push(`filter[${i}] needs a "field" or an "expr"`);
+        }
+      });
+    }
+  }
+
+  errors.push(...collectExpressionErrors(c));
   return errors;
 }
 
@@ -253,6 +361,8 @@ export function loadSourcesFromDir(dirPath: string): SourceConfig[] {
       const errors = validateSourceConfig(raw);
       if (errors.length === 0) {
         const parsed = raw as SourceConfig;
+        // File-backed lookup tables are read once here; a missing file skips the source.
+        if (parsed.lookups !== undefined) parsed.lookups = resolveLookups(parsed.lookups, dirPath);
         // A non-canonical category still loads (the engine is data-driven and must not
         // hard-fail on a new layer), but it is surfaced loudly because the frontend has no
         // marker for it.

@@ -1,4 +1,11 @@
 import { DerivedField, FilterRule, ScalableObservationField, SourceConfig } from './yaml-loader';
+import { computeDedupeKey } from './dedupe';
+import { ExpressionContext, evaluateExpression } from './expressions';
+
+/** Expression context (lookup tables) for one source. */
+export function expressionContext(config: Pick<SourceConfig, 'lookups'>): ExpressionContext {
+  return { lookups: (config.lookups ?? {}) as Record<string, unknown> };
+}
 
 export interface EntityRecord {
   id: string;
@@ -43,8 +50,10 @@ export function resolvePath(obj: unknown, pathStr?: string): unknown {
  * numeric string (e.g. "0"), treat it as a LITERAL constant. This is why `altitude: "0"`
  * yields 0 instead of looking up a field named "0".
  */
-export function resolveValue(obj: unknown, expr?: string): unknown {
+export function resolveValue(obj: unknown, expr?: string, ctx?: ExpressionContext): unknown {
   if (expr === undefined || expr === null) return undefined;
+  // `=expr` values are evaluated by the sandboxed expression engine (see expressions.ts).
+  if (expr.startsWith('=')) return evaluateExpression(expr.slice(1), obj, ctx);
   const viaPath = resolvePath(obj, expr);
   if (viaPath !== undefined) return viaPath;
   if (typeof expr === 'string' && expr.trim() !== '' && !Number.isNaN(Number(expr))) {
@@ -64,10 +73,16 @@ function isPresent(v: unknown): boolean {
  * accepts everything). Applied by the scheduler BEFORE `mapRecord`, so records a source
  * deliberately excludes are never confused with malformed ones.
  */
-export function passesFilter(raw: unknown, rules?: FilterRule[]): boolean {
+export function passesFilter(raw: unknown, rules?: FilterRule[], ctx?: ExpressionContext): boolean {
   if (!rules || rules.length === 0) return true;
 
   for (const rule of rules) {
+    if (rule.expr !== undefined) {
+      const src = rule.expr.startsWith('=') ? rule.expr.slice(1) : rule.expr;
+      if (!evaluateExpression(src, raw, ctx)) return false;
+      if (rule.field === undefined) continue;
+    }
+
     const value = resolvePath(raw, rule.field);
 
     if (rule.not_empty === true && !isPresent(value)) return false;
@@ -185,6 +200,17 @@ function normalizeTimestamp(rawTs: unknown): { ms: number; iso: string; fromSour
 }
 
 /**
+ * True when the record's latitude/longitude do not resolve to finite numbers. The scheduler
+ * uses it with `observation.optional: true` to drop non-geo records silently (counted).
+ */
+export function isUnlocated(raw: unknown, config: SourceConfig): boolean {
+  const ctx = expressionContext(config);
+  const lat = toNumber(resolveValue(raw, config.observation.latitude, ctx));
+  const lon = toNumber(resolveValue(raw, config.observation.longitude, ctx));
+  return !Number.isFinite(lat) || !Number.isFinite(lon);
+}
+
+/**
  * Returns null when the record cannot be plotted (no id or no valid coordinates) — the
  * scheduler skips nulls. We NEVER coerce a missing coordinate to 0 and plot it at (0,0).
  */
@@ -193,7 +219,8 @@ export function mapRecord(
   config: SourceConfig,
   sourceId: string
 ): { entity: EntityRecord; observation: ObservationRecord } | null {
-  const extIdRaw = resolveValue(raw, config.entity.external_id);
+  const ctx = expressionContext(config);
+  const extIdRaw = resolveValue(raw, config.entity.external_id, ctx);
   if (extIdRaw === undefined || extIdRaw === null || String(extIdRaw) === '') {
     return null; // no stable identity -> skip (do not invent a random id)
   }
@@ -201,7 +228,7 @@ export function mapRecord(
   // Stored ids are namespaced by source so two feeds that reuse an external id (e.g. "1")
   // never overwrite each other's entity or observation rows.
   const entityId = `${sourceId}:${extId}`;
-  const name = String(resolveValue(raw, config.entity.name) ?? extId);
+  const name = String(resolveValue(raw, config.entity.name, ctx) ?? extId);
   const scale = config.observation.scale ?? {};
   const scaled = (field: ScalableObservationField, n: number): number => {
     const factor = scale[field];
@@ -209,27 +236,33 @@ export function mapRecord(
   };
   const category = config.entity.category || config.layer_type || 'general';
 
-  const lat = scaled('latitude', toNumber(resolveValue(raw, config.observation.latitude)));
-  const lon = scaled('longitude', toNumber(resolveValue(raw, config.observation.longitude)));
+  const lat = scaled('latitude', toNumber(resolveValue(raw, config.observation.latitude, ctx)));
+  const lon = scaled('longitude', toNumber(resolveValue(raw, config.observation.longitude, ctx)));
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
     return null; // missing/invalid position -> skip (never plot at 0,0)
   }
 
   // Altitude is always stored in metres; use `observation.scale.altitude` to convert.
-  const alt = scaled('altitude', toNumberOrZero(resolveValue(raw, config.observation.altitude)));
-  const speed = scaled('speed', toNumberOrZero(resolveValue(raw, config.observation.speed)));
-  const heading = scaled('heading', toNumberOrZero(resolveValue(raw, config.observation.heading)));
+  const alt = scaled(
+    'altitude',
+    toNumberOrZero(resolveValue(raw, config.observation.altitude, ctx))
+  );
+  const speed = scaled('speed', toNumberOrZero(resolveValue(raw, config.observation.speed, ctx)));
+  const heading = scaled(
+    'heading',
+    toNumberOrZero(resolveValue(raw, config.observation.heading, ctx))
+  );
 
   const {
     ms: tsMs,
     iso: isoTimestamp,
     fromSource: tsFromSource
-  } = normalizeTimestamp(resolveValue(raw, config.observation.timestamp));
+  } = normalizeTimestamp(resolveValue(raw, config.observation.timestamp, ctx));
 
   const metadata: Record<string, unknown> = {};
   if (config.entity.metadata) {
     for (const [key, expr] of Object.entries(config.entity.metadata)) {
-      metadata[key] = resolveValue(raw, expr);
+      metadata[key] = resolveValue(raw, expr, ctx);
     }
   }
   // Derived fields are computed from the raw record and win over a 1:1 copy of the same key.
@@ -256,6 +289,11 @@ export function mapRecord(
   let obsId: string;
   if (mode === 'upsert') {
     obsId = `obs_${entityId}`;
+  } else if (mode === 'dedupe') {
+    // Content identity: a record already seen (same hash) is ignored by the scheduler.
+    const { timestamp: _ingestTs, ...stable } = entity;
+    const fallback = tsFromSource ? entity : stable;
+    obsId = `obs_${entityId}_${computeDedupeKey(raw, config.recording?.dedupe_fields, fallback, ctx)}`;
   } else if (tsFromSource) {
     obsId = `obs_${entityId}_${tsMs}`;
   } else {
