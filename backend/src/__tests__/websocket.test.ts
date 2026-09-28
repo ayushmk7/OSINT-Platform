@@ -5,6 +5,7 @@ import { setupWebSocketServer, WS_PATH } from '../websocket/server';
 import { broadcaster } from '../websocket/broadcaster';
 import { initDatabase, closeDatabase } from '../db/database';
 import { createApp } from '../app';
+import { upsertFeedItems } from '../feeds/store';
 
 import { ENTITY_CATEGORIES } from '../engine/yaml-loader';
 
@@ -124,6 +125,35 @@ describe('WebSocket Telemetry Server', () => {
     expect(msg.data.entities.length).toBeGreaterThan(0);
     expect(msg.data.entities[0]).toHaveProperty('latitude');
     expect(msg.data.entities[0]).toHaveProperty('longitude');
+  });
+
+  it('initial_state carries recent feed items and indicators; live frames are typed', async () => {
+    upsertFeedItems(db, [
+      {
+        id: 's:n1',
+        source_id: 's',
+        item_id: 'n1',
+        title: 'Headline',
+        url: null,
+        summary: null,
+        published: new Date().toISOString(),
+        tags: [],
+        severity: 'info',
+        latitude: null,
+        longitude: null,
+        entity_id: null,
+        first_seen: new Date().toISOString()
+      }
+    ]);
+    const ws = await connect();
+    const msg = await nextMessage(ws, 'initial_state');
+    expect(msg.data.feed.map((i: { id: string }) => i.id)).toContain('s:n1');
+    expect(Array.isArray(msg.data.indicators)).toBe(true);
+
+    broadcaster.broadcastFeedItem({ id: 's:n2' });
+    expect((await nextMessage(ws, 'feed_item')).data.id).toBe('s:n2');
+    broadcaster.broadcastIndicatorUpdate({ id: 's:kp', value: 3 });
+    expect((await nextMessage(ws, 'indicator_update')).data.value).toBe(3);
   });
 
   it('initial_state carries metadata as an object and enabled as a boolean', async () => {

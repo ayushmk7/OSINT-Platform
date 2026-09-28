@@ -12,6 +12,8 @@ import { SourceConfig, loadSourcesFromDir, parseDurationSeconds } from './yaml-l
 import { isStreamTransport } from './transport-config';
 import { StreamHandle, fetchHttpRecords, startStream } from './transports';
 import { saveSourcePresentation } from './source-presentation';
+import { ingestNonGeo } from '../feeds/ingest';
+import { sourceKind, type FeedItem, type Indicator } from '../feeds/types';
 
 /** Retention cap for `append` sources: newest N observations kept per entity. */
 export const MAX_OBS_PER_ENTITY = 200;
@@ -47,6 +49,10 @@ export class IngestionScheduler {
   // Step 3 sets this to broadcaster.broadcastEntityUpdate so the WS stream is not a
   // per-record flood.
   public onEntityUpdate?: (entity: EntityRecord) => void;
+  /** `kind: feed` sources: called once per NEW feed item. */
+  public onFeedItem?: (item: FeedItem) => void;
+  /** `kind: indicator` sources: called for every indicator whose reading changed. */
+  public onIndicator?: (indicator: Indicator) => void;
 
   constructor(db: Database.Database, sourcesDir: string) {
     this.db = db;
@@ -161,6 +167,7 @@ export class IngestionScheduler {
    * Returns the number of records written; throws on a database error.
    */
   public ingestRecords(config: SourceConfig, rawRecords: unknown[]): number {
+    if (sourceKind(config) !== 'geo') return this.ingestNonGeoRecords(config, rawRecords);
     // Inner block keeps the original poll body at its old indentation (smaller diffs).
     {
       const upsertEntityStmt = this.db.prepare(`
@@ -336,6 +343,25 @@ export class IngestionScheduler {
       });
       return written;
     }
+  }
+
+  /**
+   * `kind: feed` / `kind: indicator`: store items/readings (src/feeds). Located feed items also
+   * run through the geo pipeline above, so they are plotted on the source's layer.
+   */
+  private ingestNonGeoRecords(config: SourceConfig, rawRecords: unknown[]): number {
+    const stats = ingestNonGeo(this.db, config, rawRecords, {
+      onFeedItem: this.onFeedItem,
+      onIndicator: this.onIndicator,
+      ingestGeo: (records) => this.ingestRecords({ ...config, kind: 'geo' }, records)
+    });
+    this.lastStats.set(config.name, {
+      ...stats,
+      unlocated: 0,
+      duplicates: 0,
+      stale: 0
+    });
+    return stats.written;
   }
 
   /** Register sources, poll each enabled one immediately, then on its own interval. */

@@ -66,7 +66,8 @@ export function initDatabase(dbPath: string = 'mk-osint.db'): Database.Database 
   const sourceColumns = new Set(
     (db.prepare('PRAGMA table_info(sources)').all() as Array<{ name: string }>).map((c) => c.name)
   );
-  for (const column of ['layer', 'display']) {
+  // `kind`: geo | feed | indicator (src/feeds), so clients can tell non-geo sources apart.
+  for (const column of ['layer', 'display', 'kind']) {
     if (!sourceColumns.has(column)) db.exec(`ALTER TABLE sources ADD COLUMN ${column} TEXT`);
   }
 

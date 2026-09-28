@@ -7,6 +7,8 @@ import { TransportExtras, validateTransportExtras } from './transport-config';
 import { collectExpressionErrors } from './expressions';
 import { resolveLookups } from './lookups';
 import type { ParserOptions, SupportedFormat } from './parsers/types';
+import { applyKindDefaults, validateKindBlocks } from '../feeds/config';
+import { sourceKind, type FeedBlock, type IndicatorBlock, type SourceKind } from '../feeds/types';
 
 /** `recording.mode` values. `dedupe` = content-hash identity + INSERT OR IGNORE. */
 export const RECORDING_MODES = ['upsert', 'append', 'dedupe'] as const;
@@ -101,6 +103,12 @@ export interface SourceConfig {
   layer_type: string;
   display_name: string;
   enabled?: boolean;
+  /** `geo` (default), `feed` (news/advisory items) or `indicator` (scalar readings). */
+  kind?: SourceKind;
+  /** Mapping for `kind: feed` (see src/feeds). */
+  feed?: FeedBlock;
+  /** Mapping for `kind: indicator` (see src/feeds). */
+  indicator?: IndicatorBlock;
   /** Base fields plus the optional auth/body/pagination/stream fields (TransportExtras). */
   transport: TransportExtras & {
     type: string;
@@ -249,14 +257,21 @@ export function validateSourceConfig(config: unknown): string[] {
     requireString(c.parser.format, 'parser.format');
   }
 
-  if (!c.entity || typeof c.entity !== 'object') {
+  // feed / indicator sources map through their own block; entity/observation are optional.
+  const geo = sourceKind(c) === 'geo';
+  errors.push(...validateKindBlocks(c));
+  if (!geo) {
+    // Nothing else to require.
+  } else if (!c.entity || typeof c.entity !== 'object') {
     errors.push('missing required section "entity"');
   } else {
     requireString(c.entity.external_id, 'entity.external_id');
   }
 
   const observation = c.observation;
-  if (!observation || typeof observation !== 'object') {
+  if (!geo && observation === undefined) {
+    // Synthesised by applyKindDefaults at load time.
+  } else if (!observation || typeof observation !== 'object') {
     errors.push('missing required section "observation"');
   } else {
     requireString(observation.latitude, 'observation.latitude');
@@ -386,6 +401,7 @@ export function loadSourcesFromDir(dirPath: string): SourceConfig[] {
       const errors = validateSourceConfig(raw);
       if (errors.length === 0) {
         const parsed = raw as SourceConfig;
+        applyKindDefaults(parsed);
         // `${NAME}` placeholders are resolved per request; a source whose required env var
         // is unset stays inert (skipped with a warning) instead of failing every poll.
         const missingEnv = missingEnvVars(envScope(parsed.transport));

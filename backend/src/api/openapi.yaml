@@ -255,6 +255,85 @@ paths:
                         enabled:
                           type: boolean
                 required: [enabled, reason, provider, model, analyses]
+  /api/feed:
+    get:
+      summary: List feed items (news, advisories)
+      description: >-
+        Items from `kind: feed` sources, newest first by publish time. Items are de-duplicated
+        by id per source; each source keeps its newest 500 items and nothing older than
+        `MKOSINT_FEED_MAX_AGE` (default 14d). New items are also pushed live as WebSocket
+        `feed_item` frames carrying the same `FeedItem` object.
+      parameters:
+        - in: query
+          name: source
+          schema:
+            type: string
+          description: Only items from this source id.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+          description: Page size, clamped to [1, 500]. A non-numeric value is a 400.
+        - in: query
+          name: since
+          schema:
+            type: string
+            format: date-time
+          description: Only items published strictly after this ISO 8601 timestamp.
+      responses:
+        '200':
+          description: Feed items, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  limit:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FeedItem'
+                required: [limit, items]
+        '400':
+          description: Invalid `limit` or `since`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/indicators:
+    get:
+      summary: List indicators (scalar readings)
+      description: >-
+        Latest reading plus up to 100 history points for every indicator of the `kind:
+        indicator` sources. Changed readings are also pushed live as WebSocket
+        `indicator_update` frames carrying the same `Indicator` object.
+      parameters:
+        - in: query
+          name: source
+          schema:
+            type: string
+          description: Only indicators from this source id.
+      responses:
+        '200':
+          description: Indicators, ordered by source then id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  indicators:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Indicator'
+                required: [indicators]
+        '500':
+          $ref: '#/components/responses/ServerError'
 components:
   parameters:
     SourceId:
@@ -328,6 +407,12 @@ components:
           type: integer
         enabled:
           type: boolean
+        kind:
+          type: string
+          enum: [geo, feed, indicator]
+          description: >-
+            `geo` sources plot entities; `feed` sources produce feed items (plus entities for
+            located items); `indicator` sources produce indicator readings only.
         layer:
           nullable: true
           allOf:
@@ -338,7 +423,7 @@ components:
           allOf:
             - $ref: '#/components/schemas/SourceDisplay'
           description: Marker style + entity card (defaults applied). Null only for legacy rows.
-      required: [id, name, type, transport, url, update_interval_sec, enabled, layer, display]
+      required: [id, name, type, transport, url, update_interval_sec, enabled, kind, layer, display]
     SourceLayer:
       type: object
       properties:
@@ -549,3 +634,105 @@ components:
             type: string
           description: Entity ids the insight is about (verified to exist when stored)
       required: [id, analysis, title, summary, attention, created_at, payload, refs]
+    Severity:
+      type: string
+      enum: [info, low, medium, high, critical]
+    FeedItem:
+      type: object
+      properties:
+        id:
+          type: string
+          description: '`<source_id>:<item id>`'
+        source_id:
+          type: string
+        item_id:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+          nullable: true
+          description: Absolute http(s) link, or null
+        summary:
+          type: string
+          nullable: true
+          description: Plain text (HTML stripped), at most 600 characters
+        published:
+          type: string
+          format: date-time
+          description: Publish time; the first-seen time when the feed gives none
+        tags:
+          type: array
+          items:
+            type: string
+        severity:
+          $ref: '#/components/schemas/Severity'
+        latitude:
+          type: number
+          nullable: true
+        longitude:
+          type: number
+          nullable: true
+        entity_id:
+          type: string
+          nullable: true
+          description: Globe entity id when the item has coordinates
+        first_seen:
+          type: string
+          format: date-time
+      required:
+        [
+          id,
+          source_id,
+          item_id,
+          title,
+          url,
+          summary,
+          published,
+          tags,
+          severity,
+          latitude,
+          longitude,
+          entity_id,
+          first_seen
+        ]
+    Indicator:
+      type: object
+      properties:
+        id:
+          type: string
+          description: '`<source_id>:<indicator id>`'
+        source_id:
+          type: string
+        indicator_id:
+          type: string
+        label:
+          type: string
+        value:
+          type: number
+        unit:
+          type: string
+          nullable: true
+        change:
+          type: number
+          nullable: true
+          description: Change reported by the source (e.g. percent), when mapped
+        severity:
+          $ref: '#/components/schemas/Severity'
+        updated_at:
+          type: string
+          format: date-time
+        history:
+          type: array
+          description: Up to 100 points, oldest first; the last one is the current value
+          items:
+            type: object
+            properties:
+              t:
+                type: string
+                format: date-time
+              v:
+                type: number
+            required: [t, v]
+      required:
+        [id, source_id, indicator_id, label, value, unit, change, severity, updated_at, history]
