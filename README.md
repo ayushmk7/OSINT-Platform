@@ -57,6 +57,17 @@ make dev       # backend on :4000, frontend on :3000
 Open <http://localhost:3000>. The Vite dev server proxies `/api` and `/ws` to the backend on
 port 4000, so there is nothing else to configure.
 
+**Or with Docker** (one container serves the UI, API and WebSocket on port 4000):
+
+```bash
+make docker-up     # docker compose up -d --build
+# open http://localhost:4000
+make docker-down
+```
+
+Data lives in the `mk-osint-data` volume, `./sources.d` is mounted read-only, and
+`backend/.env` is loaded if present. See [docs/development.md](docs/development.md#deployment).
+
 Other targets:
 
 ```bash
@@ -79,6 +90,9 @@ The backend reads environment variables (via `dotenv`). Copy `backend/.env.examp
 | `SOURCES_DIR` | `<repo>/sources.d` | Directory the engine loads source YAML files from |
 | `DB_PATH` | `mk-osint.db` | SQLite database file, relative to the backend working directory |
 | `INGEST_ENABLED` | `true` | Set to `false` to register sources without polling them |
+| `MKOSINT_CESIUM_ION_TOKEN` | unset | Cesium ion token, served to the browser via `/config.json` |
+| `MKOSINT_DEFAULT_GLOBE_STYLE` | `tactical` | Initial globe style, served via `/config.json` |
+| `MKOSINT_SERVE_FRONTEND` | auto | `true` makes the backend serve `frontend/dist` (on by default when `NODE_ENV=production`) |
 
 If you change `PORT`, update the proxy targets in `frontend/vite.config.ts` to match.
 

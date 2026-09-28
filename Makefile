@@ -1,4 +1,4 @@
-.PHONY: install dev build test lint format help
+.PHONY: install dev build test lint format help docker-build docker-up docker-down
 
 help:
 	@echo "MK-OSINT commands:"
@@ -8,6 +8,9 @@ help:
 	@echo "  make test    - Run test suites for backend and frontend"
 	@echo "  make lint    - Run linters across workspace"
 	@echo "  make format  - Format codebase with Prettier"
+	@echo "  make docker-build - Build the single-container image (mk-osint:latest)"
+	@echo "  make docker-up    - Build and start the container on http://localhost:4000"
+	@echo "  make docker-down  - Stop and remove the container (keeps the data volume)"
 
 # Installs root + backend + frontend deps in one pass via NPM workspaces.
 # Call `npm install` DIRECTLY. Do NOT add an "install" script to package.json:
@@ -30,3 +33,12 @@ lint:
 
 format:
 	npm run format
+
+docker-build:
+	docker compose build
+
+docker-up:
+	docker compose up -d --build
+
+docker-down:
+	docker compose down

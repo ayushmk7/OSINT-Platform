@@ -27,6 +27,8 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
+      // Runtime settings served by the backend (see backend/src/runtime-config.ts).
+      '/config.json': 'http://localhost:4000',
       '/api': {
         target: 'http://localhost:4000',
         changeOrigin: true

@@ -5,13 +5,15 @@ import cors from 'cors';
 import Database from 'better-sqlite3';
 import apiRouter from './api';
 import { notFoundHandler, sendServerError } from './api/errors';
+import { runtimeConfigHandler } from './runtime-config';
+import { mountFrontend, resolveFrontendDir, shouldServeFrontend } from './static-frontend';
 
 /**
- * The spec lives in `src/api/` and tsc does not copy YAML into `dist/`, so resolve it from the
- * backend root: `__dirname` is `src/` under tsx/ts-jest and `dist/` after `tsc`, and
- * `../src/api/openapi.yaml` points at the same file from both.
+ * `__dirname` is `src/` under tsx/ts-jest and `dist/` after the build, which copies the spec to
+ * `dist/api/openapi.yaml` (tsc does not copy YAML). The same relative path works for both, and
+ * the production image needs no `src/` directory.
  */
-export const OPENAPI_SPEC_PATH = path.resolve(__dirname, '../src/api/openapi.yaml');
+export const OPENAPI_SPEC_PATH = path.resolve(__dirname, 'api/openapi.yaml');
 
 /**
  * Builds the Express app.
@@ -39,6 +41,12 @@ export function createApp(db: Database.Database): Express {
   });
 
   app.use('/api', apiRouter);
+
+  // Client-safe runtime settings (allow-listed MKOSINT_* vars only) and, when enabled, the built
+  // SPA on the same port as the API + WebSocket (single-container deployment).
+  app.get('/config.json', runtimeConfigHandler);
+  const frontendDir = resolveFrontendDir();
+  if (shouldServeFrontend(frontendDir)) mountFrontend(app, frontendDir);
 
   // Must stay LAST: JSON 404 envelope instead of Express's default HTML page.
   app.use(notFoundHandler);
