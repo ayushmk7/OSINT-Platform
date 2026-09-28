@@ -1,0 +1,40 @@
+# USD reference exchange rates (European Central Bank, published once per working day) via the
+# keyless Frankfurter API. Docs: https://frankfurter.dev
+schema_version: 1
+name: indicator_fx_usd
+source_type: frankfurter
+layer_type: markets
+display_name: 'FX rates (ECB)'
+enabled: true
+kind: indicator
+
+layer:
+  id: markets
+  name: Markets
+  group: Other
+  description: Crypto and FX reference rates
+
+display:
+  icon: dot
+  color: '#ffd54f'
+
+transport:
+  type: http_poll
+  url: 'https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR,GBP,JPY,CNY,CHF'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '1h'
+
+# {"rates": {"EUR": 0.87, ...}} -> one record per currency: {currency: 'EUR', value: 0.87}.
+parser:
+  format: json
+  records_path: rates
+  object_to_records: true
+  key_field: currency
+
+indicator:
+  id: currency
+  label: "=concat('USD / ', currency)"
+  value: '=number(value)'

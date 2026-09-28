@@ -1,0 +1,44 @@
+# Al Jazeera — RSS/Atom feed shown in the News/Feed panel (kind: feed, no map markers).
+schema_version: 1
+name: feed_aljazeera
+source_type: rss
+layer_type: feed_aljazeera
+display_name: 'Al Jazeera'
+enabled: true
+kind: feed
+
+layer:
+  id: feed_aljazeera
+  name: 'Al Jazeera'
+  group: News
+  description: 'Al Jazeera English, all news'
+
+display:
+  icon: news
+  color: '#ffcc80'
+
+transport:
+  type: http_poll
+  url: 'https://www.aljazeera.com/xml/rss/all.xml'
+  method: GET
+  headers:
+    Accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.5'
+  timeout: '20s'
+  interval: '10m'
+  retry:
+    max_attempts: 2
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '30s'
+
+parser:
+  format: rss
+  max_records: 100
+
+feed:
+  id: '=guid ?? link'
+  title: title
+  url: link
+  summary: description
+  published: published
+  tags: categories

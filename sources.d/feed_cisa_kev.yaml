@@ -1,0 +1,47 @@
+# CISA Known Exploited Vulnerabilities catalog: newly added CVEs as feed items. Only entries
+# added within MKOSINT_FEED_MAX_AGE (default 14 days) are kept. The catalog size is tracked by
+# indicator_cisa_kev_count.yaml. Docs: https://www.cisa.gov/known-exploited-vulnerabilities-catalog
+schema_version: 1
+name: feed_cisa_kev
+source_type: cisa_kev
+layer_type: cisa_kev
+display_name: 'CISA KEV additions'
+enabled: true
+kind: feed
+
+layer:
+  id: cisa_kev
+  name: 'CISA KEV additions'
+  group: Cyber
+  description: Newly added known-exploited CVEs
+
+display:
+  icon: bug
+  color: '#ff5c7a'
+
+transport:
+  type: http_poll
+  url: 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '1h'
+  retry:
+    max_attempts: 2
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: json
+  records_path: vulnerabilities
+
+feed:
+  id: cveID
+  title: "=concat(cveID, ': ', vulnerabilityName)"
+  url: "=concat('https://nvd.nist.gov/vuln/detail/', cveID)"
+  summary: "=concat(shortDescription, ' Required action: ', requiredAction, ' Due ', dueDate, '.')"
+  published: dateAdded
+  tags: '=vendorProject'
+  severity: "=knownRansomwareCampaignUse == 'Known' ? 'critical' : 'high'"

@@ -376,3 +376,17 @@ describe('scheduler + API integration', () => {
     expect(getAllSources().find((s) => s.id === 'news_src')?.kind).toBe('feed');
   });
 });
+
+describe('xml entity limits', () => {
+  it('parses feeds with thousands of escaped characters (rss and xml parsers)', () => {
+    const items = Array.from(
+      { length: 400 },
+      (_, i) => `<item><title>A &amp; B &lt;${i}&gt;</title><guid>${i}</guid></item>`
+    ).join('');
+    const doc = `<?xml version="1.0"?><rss version="2.0"><channel>${items}</channel></rss>`;
+    const rss = parsePayload(doc, 'rss') as Array<{ title: string }>;
+    expect(rss).toHaveLength(400);
+    expect(rss[0].title).toBe('A & B <0>');
+    expect(parsePayload(doc, 'xml', 'rss.channel.item')).toHaveLength(400);
+  });
+});

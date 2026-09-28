@@ -1,7 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
-import { IParser, getNestedProperty, toRecordArray } from './types';
+import { ENTITY_LIMITS, IParser, getNestedProperty, toRecordArray } from './types';
 
-const parser = new XMLParser({ ignoreAttributes: false });
+const parser = new XMLParser({ ignoreAttributes: false, processEntities: ENTITY_LIMITS });
 
 /**
  * XML / RSS / Atom payloads. `recordsPath` addresses the repeated element

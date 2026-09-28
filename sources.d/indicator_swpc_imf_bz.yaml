@@ -1,0 +1,40 @@
+# NOAA SWPC interplanetary magnetic field Bz (GSM), latest 1-minute value. A strongly southward
+# (negative) Bz couples the solar wind into the magnetosphere and drives storms.
+# Docs: https://www.swpc.noaa.gov/products/real-time-solar-wind
+schema_version: 1
+name: indicator_swpc_imf_bz
+source_type: noaa_swpc
+layer_type: space_weather
+display_name: 'NOAA SWPC IMF Bz'
+enabled: true
+kind: indicator
+
+layer:
+  id: space_weather
+  name: Space weather
+  group: Space
+  description: NOAA Space Weather Prediction Center
+
+display:
+  icon: satellite
+  color: '#b388ff'
+
+transport:
+  type: http_poll
+  url: 'https://services.swpc.noaa.gov/products/summary/solar-wind-mag-field.json'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '5m'
+
+parser:
+  format: json
+
+indicator:
+  id: '="imf_bz"'
+  label: '="IMF Bz"'
+  value: '=number(bz_gsm)'
+  unit: 'nT'
+  timestamp: time_tag
+  severity: "=value <= -20 ? 'high' : value <= -10 ? 'medium' : 'info'"

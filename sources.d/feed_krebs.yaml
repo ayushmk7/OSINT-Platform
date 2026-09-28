@@ -1,0 +1,44 @@
+# Krebs on Security — RSS/Atom feed shown in the News/Feed panel (kind: feed, no map markers).
+schema_version: 1
+name: feed_krebs
+source_type: rss
+layer_type: feed_krebs
+display_name: 'Krebs on Security'
+enabled: true
+kind: feed
+
+layer:
+  id: feed_krebs
+  name: 'Krebs on Security'
+  group: Cyber
+  description: 'Investigative security journalism'
+
+display:
+  icon: news
+  color: '#90caf9'
+
+transport:
+  type: http_poll
+  url: 'https://krebsonsecurity.com/feed/'
+  method: GET
+  headers:
+    Accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.5'
+  timeout: '20s'
+  interval: '30m'
+  retry:
+    max_attempts: 2
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '30s'
+
+parser:
+  format: rss
+  max_records: 100
+
+feed:
+  id: '=guid ?? link'
+  title: title
+  url: link
+  summary: description
+  published: published
+  tags: categories

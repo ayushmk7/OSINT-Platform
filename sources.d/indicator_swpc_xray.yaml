@@ -1,0 +1,44 @@
+# GOES primary X-ray flux, 0.1-0.8 nm band (the flare classification band), past 6 hours at
+# 1-minute cadence; the newest 100 minutes form the history. C = 1e-6, M = 1e-5, X = 1e-4 W/m².
+# Docs: https://www.swpc.noaa.gov/products/goes-x-ray-flux
+schema_version: 1
+name: indicator_swpc_xray
+source_type: noaa_swpc
+layer_type: space_weather
+display_name: 'GOES X-ray flux'
+enabled: true
+kind: indicator
+
+layer:
+  id: space_weather
+  name: Space weather
+  group: Space
+  description: NOAA Space Weather Prediction Center
+
+display:
+  icon: satellite
+  color: '#b388ff'
+
+transport:
+  type: http_poll
+  url: 'https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '5m'
+
+parser:
+  format: json
+
+filter:
+  - field: energy
+    in: ['0.1-0.8nm']
+
+indicator:
+  id: '="xray_long"'
+  label: '="GOES X-ray 0.1-0.8 nm"'
+  value: '=number(flux)'
+  unit: 'W/m²'
+  timestamp: time_tag
+  severity: "=value >= 1e-4 ? 'critical' : value >= 1e-5 ? 'high' : value >= 1e-6 ? 'low' : 'info'"

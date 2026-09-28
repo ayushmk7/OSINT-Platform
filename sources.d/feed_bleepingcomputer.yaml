@@ -1,0 +1,45 @@
+# BleepingComputer — RSS/Atom feed shown in the News/Feed panel (kind: feed, no map markers).
+schema_version: 1
+name: feed_bleepingcomputer
+source_type: rss
+layer_type: feed_bleepingcomputer
+display_name: 'BleepingComputer'
+enabled: true
+kind: feed
+
+layer:
+  id: feed_bleepingcomputer
+  name: 'BleepingComputer'
+  group: Cyber
+  description: 'Security & tech news'
+
+display:
+  icon: bug
+  color: '#80deea'
+
+transport:
+  type: http_poll
+  url: 'https://www.bleepingcomputer.com/feed/'
+  method: GET
+  headers:
+    Accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.5'
+  timeout: '20s'
+  interval: '15m'
+  retry:
+    max_attempts: 2
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '30s'
+
+parser:
+  format: rss
+  max_records: 100
+
+feed:
+  id: '=guid ?? link'
+  title: title
+  url: link
+  summary: description
+  published: published
+  tags: categories
+  severity: '=contains(lower(title), "zero-day") || contains(lower(title), "actively exploited") ? "high" : contains(lower(title), "ransomware") ? "medium" : "info"'
