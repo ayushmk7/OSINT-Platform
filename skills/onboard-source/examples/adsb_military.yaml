@@ -1,19 +1,21 @@
-# Military flight positions via the adsb.lol v2 /mil endpoint (global, no key).
+# Military flight positions via the adsb.fi open-data v2 /mil endpoint (global, no key).
+# api.adsb.lol/v2/mil answers HTTP 200 with an EMPTY `ac` array, so this uses
+# opendata.adsb.fi, which serves the same readsb JSON schema with live contacts.
 schema_version: 1
 
 name: adsb_military
 source_type: adsb_military
-layer_type: flights_military
-display_name: "Military Flights"
+layer_type: aviation
+display_name: "Military Flights ADSB"
 enabled: true
 
 transport:
   type: http_poll
-  url: "https://api.adsb.lol/v2/mil"
+  url: "https://opendata.adsb.fi/api/v2/mil"
   method: GET
   headers:
     Accept: "application/json"
-  timeout: "30s"
+  timeout: "15s"
   interval: "30s"
   retry:
     max_attempts: 2
@@ -24,7 +26,7 @@ transport:
 parser:
   format: json
   records_path: "ac"
-  max_records: 10000
+  max_records: 5000
 
 entity:
   external_id: "hex"
@@ -44,6 +46,8 @@ observation:
   altitude: "alt_baro"
   speed: "gs"
   heading: "track"
+  scale:
+    altitude: 0.3048
 
 # append: each poll adds a trail point stamped with the ingestion time (the feed
 # carries no per-record timestamp).

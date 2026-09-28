@@ -5,7 +5,7 @@ schema_version: 1
 name: iss_position
 source_type: iss_position
 layer_type: iss
-display_name: "ISS Position"
+display_name: "ISS Position Tracker"
 enabled: true
 
 transport:
@@ -15,7 +15,7 @@ transport:
   headers:
     Accept: "application/json"
   timeout: "10s"
-  interval: "60s"
+  interval: "30s"
   retry:
     max_attempts: 3
     backoff: exponential
@@ -41,6 +41,8 @@ observation:
   speed: "velocity"
   heading: "0"
   timestamp: "timestamp"
+  scale:
+    altitude: 1000
 
 recording:
   mode: append

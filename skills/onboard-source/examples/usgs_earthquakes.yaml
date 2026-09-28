@@ -18,7 +18,7 @@ transport:
     max_attempts: 3
     backoff: exponential
     initial_delay: "1s"
-    max_delay: "30s"
+    max_delay: "15s"
 
 parser:
   format: geojson
@@ -40,6 +40,8 @@ observation:
   speed: "0"
   heading: "0"
   timestamp: "properties.time"
+  scale:
+    altitude: -1000
 
 recording:
   mode: upsert

@@ -5,211 +5,182 @@ description: "Analyze an HTTP endpoint (JSON, GeoJSON, XML, CSV) and generate a 
 
 # Onboard Source Skill (`onboard-source`)
 
-This skill guides an AI agent through inspecting a live HTTP data endpoint (JSON, GeoJSON, XML, CSV) and producing a fully populated, validated schema v2 declarative YAML source definition in `sources.d/<source_name>.yaml`.
+This skill takes an HTTP endpoint URL, inspects its response, and writes a source definition to `sources.d/<source_name>.yaml` (relative to the repository root) that the engine in `backend/src/engine/` can load and poll.
+
+The engine implements one schema, `schema_version: 1`. A file with any other `schema_version` is rejected; omitting the key means `1`. Everything it reads is described below. It has no expression language, no display/style block, no cache and no history settings. Unknown keys are silently ignored, so writing them has no effect. The full reference is `docs/data-sources.md`; the source of truth is `backend/src/engine/yaml-loader.ts` (the `SourceConfig` type) and `backend/src/engine/field-mapper.ts`.
+
+Working examples for 19 public feeds are in `skills/onboard-source/examples/`. Start from the one closest to the new feed.
 
 ---
 
-## Step-by-Step Instructions for Agents
-
-### Step 1: Fetch Source Data from Target URL
-Run an HTTP request to the endpoint provided by the user using `rtk curl` or Node `fetch` to inspect the response structure and sample payload.
+## Step 1: Fetch a sample response
 
 ```bash
-rtk curl -s -H "Accept: application/json" "<TARGET_URL>" | head -n 50
+curl -s -H "Accept: application/json" "<TARGET_URL>" | head -c 4000
 ```
 
-- Save or capture the raw response payload to inspect data structure.
-- If authentication, query parameters, or special headers are required, make sure to document them.
+- Note the `Content-Type` and whether the body is an array, an object wrapping an array, a GeoJSON `FeatureCollection`, XML or CSV.
+- The engine sends no request body and supports no auth flow beyond static `headers`. If the feed needs a key, put it in `transport.headers` or the URL query string, and tell the user it will be stored in plain text.
+- Check that the feed returns records right now. A 200 response with an empty list is useless (the `api.adsb.lol/v2/mil` endpoint did exactly that).
 
----
+## Step 2: Pick the parser
 
-### Step 2: Analyze Format & Schema
-Examine the HTTP response body and determine the data format:
-- **`geojson`**: standard `FeatureCollection` with `features` array containing `geometry.coordinates` `[lon, lat, alt]` and `properties`.
-- **`json`**: array of objects or nested JSON structure with a record array path.
-- **`xml`**: XML document with repeating tag elements.
-- **`csv`**: tabular CSV data with headers.
+| Body | `parser.format` | `parser.records_path` |
+| :-- | :-- | :-- |
+| Top-level JSON array | `json` | omit |
+| JSON object holding the array, e.g. `{"ac": [...]}` | `json` | `ac` (dot path, e.g. `results.bindings`) |
+| Single JSON object that is itself one record (e.g. the ISS API) | `json` | omit; the object becomes one record |
+| GeoJSON `FeatureCollection` | `geojson` | omit (defaults to `features`) |
+| XML / RSS | `xml` | path to the repeated element, e.g. `rss.channel.item` |
+| CSV with a header row | `csv` | omit; each row becomes an object keyed by column name, all values strings |
 
----
+- `records_path` accepts dots only, not bracket indices.
+- XML attributes appear as keys prefixed with `@_` (for example `@_id`).
+- `parser.max_records` keeps only the first N records per poll.
+- Any other `format` value makes every poll fail with `Unsupported parser format`.
 
-### Step 3: Identify Key Fields & Expression Paths
-Map payload fields to the entity and observation attributes:
+## Step 3: Map the fields
 
-1. **`records_path`**: The JSONPath/dot-notation path to the array of records (e.g., `features` for GeoJSON, `states` for OpenSky, `data.items` for custom JSON, or empty string `""` if root is an array).
-2. **`external_id`**: Unique ID expression for entity identification (e.g., `record.id`, `record.properties.id`, or `record[0]`).
-3. **`name`**: Descriptive string/expression for display name (e.g., `record.properties.place`, `record.callsign`).
-4. **`latitude`**: Latitude expression in decimal degrees (e.g., `record.geometry.coordinates[1]` or `double(record.lat)`).
-5. **`longitude`**: Longitude expression in decimal degrees (e.g., `record.geometry.coordinates[0]` or `double(record.lon)`).
-6. **`altitude`**: Altitude expression in meters (e.g., `record.geometry.coordinates[2]` or `double(record.baro_altitude)`).
-7. **`timestamp`**: Time expression mapped to Unix milliseconds (e.g., `unix_ms(record.properties.time)` or `unix_ms(record.last_contact * 1000)`).
-8. **`velocity`**: Kinematics attributes if present (`heading`, `speed`, `climb_rate`).
-9. **`metadata`**: Key-value attribute mappings for additional domain properties.
+Every mapping value is a **path** into one raw record. It is not CEL, JSONPath or JavaScript: do not write `record.x`, `has(...)`, `double(...)`, `x * 1000`, ternaries or string functions. They will not resolve.
 
----
+| Path syntax | Example | Resolves to |
+| :-- | :-- | :-- |
+| key | `hex` | `record.hex` |
+| dotted key | `properties.place` | `record.properties.place` |
+| array index | `geometry.coordinates[1]` | second element of `coordinates` |
+| index on an array record | `[0]` | first element when each record is an array (OpenSky `states`) |
+| numeric literal | `'0'` | the number 0, but only if no field of that name exists |
 
-### Step 4: Construct Schema v2 Declarative YAML Configuration
-Assemble the full YAML source definition following Schema v2 standard structure:
+Keys that contain dots cannot be addressed. There is no arithmetic in paths; convert units with `observation.scale` instead (see below).
 
-- **Metadata Header**: `schema_version: 2`, `name`, `labels`, `source_type`, `layer_type`, `display_name`
-- **Transport**: `type: http_poll`, `url`, `method`, `headers`, `timeout`, `interval`, `max_response_bytes`, `retry`
-- **Parser**: `format` (`geojson` | `json` | `xml` | `csv`), `records_path`, `max_records`
-- **Filter**: CEL boolean expression to filter invalid or out-of-bounds records.
-- **Entity Mapping**: CEL expressions for `external_id`, `name`, `metadata`.
-- **Observation Mapping**: CEL expressions for `latitude`, `longitude`, `altitude`, `timestamp`, `velocity`, `metadata`.
-- **Recording & Cache**: `recording.mode: upsert`, `cache.ttl: "3600s"`.
-- **Display**: Icon configuration (`shape`, `rotatable`, `scale`), trail rendering, point styles, and `field_renderers`.
-- **History**: `max_lookback` and `max_range_span`.
+Map these fields:
 
----
+1. **`entity.external_id`** (required): a stable unique id. Records where it is missing or `""` are skipped. The engine stores it as `<name>:<external_id>`, so it only needs to be unique within this feed.
+2. **`entity.name`**: display name; falls back to the id.
+3. **`entity.category`**: a literal string, one of `satellite`, `aircraft`, `geological`, `radiation`, `maritime`, `atc_zone`. This alone picks the marker shape and colour on the globe. Any other value still loads but logs a warning and renders as a grey dot. If the feed does not fit, use the closest category.
+4. **`entity.metadata`**: map of output key to path. Values are copied into the entity; missing ones are dropped.
+5. **`observation.latitude`** / **`observation.longitude`** (required): decimal degrees. Records without finite coordinates are skipped, never plotted at (0, 0). In GeoJSON, `coordinates` is `[lon, lat, alt]`.
+6. **`observation.altitude`**, **`speed`**, **`heading`**: optional, default 0. Altitude is stored in metres. If the feed uses another unit, add `observation.scale`.
+7. **`observation.timestamp`**: optional. Epoch seconds, epoch milliseconds (values over 1e11) or any `Date.parse`-able string. Omit it when the feed has no per-record time; ingest time is used. Never map it to a literal such as `"now"`.
+8. **`observation.scale`**: optional map of field to multiplier. Keys must be among `latitude`, `longitude`, `altitude`, `speed`, `heading`; each value must be a finite number, or the file is rejected. The resolved value is multiplied before it is stored; a negative factor flips the sign. Metadata is never scaled, so keep the raw value in `entity.metadata` if it is worth showing.
 
-### Step 5: Validate and Write Output File
-1. Verify that the YAML syntax is strictly valid and formatted cleanly.
-2. Ensure mandatory schema fields (`schema_version`, `name`, `transport`, `parser`, `entity`, `observation`, `display`) are present.
-3. Write the final YAML file to `sources.d/<source_name>.yaml` (relative to the repo root).
+   ```yaml
+   observation:
+     altitude: 'alt_baro'
+     scale:
+       altitude: 0.3048 # feet -> metres (km feeds: 1000; km depth positive-down: -1000)
+   ```
 
-```bash
-rtk make test # or run linter/validator script if available
-```
-
----
-
-## Reference Example: Complete Schema v2 Source Template
-
-Below is a complete, fully populated example of a Schema v2 source configuration for USGS Earthquakes (`sources.d/usgs_earthquakes.yaml`):
+Optional record filtering is a **list of rules**, all of which must pass:
 
 ```yaml
-# sources.d/usgs_earthquakes.yaml
-schema_version: 2
+filter:
+  - field: 'type'
+    in: ['large_airport', 'medium_airport'] # value (as a string) must be one of these
+  - field: 'icao_code'
+    not_empty: true # value must be present and not blank
+```
 
-name: usgs_earthquakes
-labels:
-  category: geological
-  priority: low
+Optional computed metadata goes under `entity.derived`. Each entry is one of:
 
-# --- Identity ---
-source_type: usgs_earthquakes
-layer_type: earthquakes
-display_name: "USGS Earthquakes"
+```yaml
+entity:
+  derived:
+    radius_km: # lookup map on the value at `from`
+      from: 'type'
+      map: { large_airport: 9, medium_airport: 5 }
+      default: 5
+    liveatc_url: # template with {path}, {path|lower} or {path|upper}
+      template: 'https://www.liveatc.net/search/?icao={icao_code|lower}'
+    country: # plain copy of `from`, with an optional default
+      from: 'iso_country'
+      default: 'unknown'
+```
 
-# --- Ingestion ---
+A template with any unresolved placeholder is dropped (or replaced by `default`). A derived key overrides a `metadata` key of the same name. For `atc_zone` entities the frontend reads `metadata.radius_km` (ground circle size, default 5 km) and `metadata.liveatc_url`.
+
+## Step 4: Choose transport and recording settings
+
+- `transport.type: http_poll` (the only transport the engine implements).
+- `transport.interval`: poll period, default `60s`. Match the feed's update rate; use hours or days for static reference data.
+- `transport.timeout`: per-attempt timeout, default `10s`.
+- `transport.retry`: `max_attempts` (default 3, including the first try), `initial_delay` (default `1s`), `max_delay` (default `15s`, caps every delay) and `backoff`: `exponential` (default, `initial_delay × 2^(n-1)`), `linear` (`initial_delay × n`) or `fixed` (`initial_delay`). Any other `backoff` value makes the file invalid.
+- Durations are `"30s"`, `"5m"`, `"24h"`, `"1500ms"` or a bare number of seconds. Unparseable values fall back to the default silently.
+- `recording.mode`:
+  - `append` (default): keeps a track, up to 200 observations per entity. Use for moving things (aircraft, ships, the ISS).
+  - `upsert`: one observation per entity, overwritten each poll. Use for current-state or reference data (quakes, sensors, facilities).
+
+## Step 5: Write the file
+
+Write `sources.d/<name>.yaml` in the repository root. The file name should match `name`, and `name` must be unique across `sources.d/`. Use this template, deleting what does not apply:
+
+```yaml
+schema_version: 1
+
+name: usgs_earthquakes # unique source id; source_id on every entity
+source_type: usgs_earthquakes # required
+layer_type: earthquakes # fallback category if entity.category is absent
+display_name: 'USGS Earthquakes' # label in the layer drawer
+enabled: true
+
 transport:
   type: http_poll
-  url: "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson"
+  url: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson'
   method: GET
   headers:
-    Accept: "application/json"
-  timeout: "10s"
-  interval: "60s"
-  max_response_bytes: 52428800  # 50MB
+    Accept: 'application/json'
+  timeout: '10s'
+  interval: '60s'
   retry:
     max_attempts: 3
-    backoff: "exponential"
-    initial_delay: "1s"
-    max_delay: "30s"
+    backoff: exponential # or linear / fixed
+    initial_delay: '1s'
+    max_delay: '15s'
 
-# --- Response Parsing ---
 parser:
   format: geojson
-  records_path: "features"
-  max_records: 10000
+  records_path: 'features'
+  max_records: 1000
 
-# --- Record Filtering (CEL) ---
-filter: >-
-  has(record.properties.mag) && double(record.properties.mag) >= 1.0
-
-# --- Entity Mapping (CEL) ---
 entity:
-  external_id: >-
-    record.id
-  name: >-
-    has(record.properties.place) ? record.properties.place : record.id
+  external_id: 'id'
+  name: 'properties.place'
+  category: 'geological'
   metadata:
-    magnitude: >-
-      string(record.properties.mag)
-    depth: >-
-      string(record.geometry.coordinates[2])
-    place: >-
-      has(record.properties.place) ? record.properties.place : "Unknown"
-    type: >-
-      has(record.properties.type) ? record.properties.type : "earthquake"
-    alert: >-
-      has(record.properties.alert) ? record.properties.alert : ""
-    url: >-
-      has(record.properties.url) ? record.properties.url : ""
+    magnitude: 'properties.mag'
+    depth: 'geometry.coordinates[2]'
 
-# --- Observation Mapping (CEL) ---
 observation:
-  latitude: >-
-    record.geometry.coordinates[1]
-  longitude: >-
-    record.geometry.coordinates[0]
-  altitude: >-
-    record.geometry.coordinates[2] * -1000.0
-  timestamp: >-
-    unix_ms(record.properties.time)
-  velocity: {}
-  metadata:
-    magnitude: >-
-      string(record.properties.mag)
-  content_hash: ""
+  latitude: 'geometry.coordinates[1]'
+  longitude: 'geometry.coordinates[0]'
+  altitude: 'geometry.coordinates[2]'
+  speed: '0'
+  heading: '0'
+  timestamp: 'properties.time' # epoch milliseconds
+  scale:
+    altitude: -1000 # depth in km, positive-down -> metres below the surface
 
-# --- Recording ---
 recording:
   mode: upsert
-
-# --- Cache ---
-cache:
-  ttl: "3600s"
-
-# --- Display (consumed by frontend) ---
-display:
-  icon:
-    shape: ripple
-    rotatable: false
-    interpolation: false
-    scale: 1.0
-  trail:
-    color: "#ff006e"
-    width: 1.5
-    opacity: 0.7
-  style:
-    color: "#ff006e"
-    point_size: 6
-  field_renderers:
-    - keys: [magnitude, mag]
-      label: "MAGNITUDE"
-      format:
-        type: float
-        precision: 1
-        prefix: "M"
-      priority: 0
-    - keys: [depth, depth_km]
-      label: "DEPTH"
-      format:
-        type: float
-        precision: 1
-        suffix: " km"
-      priority: 1
-    - keys: [place]
-      label: "LOCATION"
-      format:
-        type: string
-      priority: 2
-    - keys: [type]
-      label: "TYPE"
-      format:
-        type: string
-        transform: upper
-      priority: 3
-    - keys: [alert]
-      label: "ALERT"
-      format:
-        type: string
-        transform: upper
-      priority: 4
-
-# --- History ---
-history:
-  max_lookback: "2160h"    # 90 days
-  max_range_span: "168h"   # 7 days per query window
 ```
+
+Do not add `labels`, `display`, `cache`, `history`, `max_response_bytes`, `observation.velocity`, `observation.metadata` or `content_hash`. The engine does not implement them.
+
+## Step 6: Validate
+
+1. Check the file loads. The loader skips a file, logging `Skipping invalid source definition <path>: <problems>`, unless `name`, `source_type`, `transport.type`, `transport.url`, `parser.format`, `entity.external_id`, `observation.latitude` and `observation.longitude` are all non-empty strings, `schema_version` is absent or `1`, `transport.retry.backoff` (if set) is `exponential`, `linear` or `fixed`, and `observation.scale` (if set) maps only scalable fields to finite numbers. `validateSourceConfig()` in the same module returns the list of problems for one parsed file:
+
+   ```bash
+   cd backend && npx tsx -e "
+   const { loadSourcesFromDir } = require('./src/engine/yaml-loader');
+   const c = loadSourcesFromDir('../sources.d');
+   console.log(c.map(s => s.name));"
+   ```
+
+   The new `name` must be in the list, with no `non-canonical entity.category` warning.
+
+2. Check the mapping against the sample from Step 1. Parse it with `parsePayload` from `src/engine/parsers` and run a few records through `mapRecord(record, config, config.name)` from `src/engine/field-mapper`. Every record should return an entity with real coordinates, not `null`, and an id of the form `<name>:<external_id>`. Check that altitude comes out in metres.
+
+3. Restart the backend and watch the log for `Error polling source <name>` or `skipped N record(s) with missing id/coordinates`, then check `GET /api/entities?source_id=<name>`.
+
+4. Run `npm run format:check` from the repository root; run `npm run format` if it complains about the new file.
