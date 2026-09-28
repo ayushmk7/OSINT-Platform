@@ -1,0 +1,65 @@
+schema_version: 1
+name: daily_situation_digest
+description: Once-a-day overview of everything the globe saw in the last 24 hours.
+enabled: true
+# Cron (UTC): 06:00 every day.
+schedule: '0 6 * * *'
+
+# Per-layer counts plus the strongest quakes and highest radiation readings, in one result set
+# with shared columns: kind, layer, id, name, value, lat, lon, timestamp.
+input:
+  lookback: 24h
+  max_records: 120
+  sql: |
+    SELECT 'layer_count' AS kind, category AS layer, NULL AS id, NULL AS name,
+           count(*) AS value, NULL AS lat, NULL AS lon, max(timestamp) AS timestamp
+    FROM entities
+    WHERE timestamp >= :since
+    GROUP BY category
+    UNION ALL
+    SELECT * FROM (
+      SELECT 'top_quake', category, id, name,
+             COALESCE(json_extract(metadata, '$.magnitude'), json_extract(metadata, '$.mag')),
+             round(latitude, 2), round(longitude, 2), timestamp
+      FROM entities
+      WHERE category IN ('geological', 'earthquakes') AND timestamp >= :since
+      ORDER BY 5 DESC
+      LIMIT 10
+    )
+    UNION ALL
+    SELECT * FROM (
+      SELECT 'top_radiation', category, id, name,
+             CAST(json_extract(metadata, '$.cpm') AS REAL),
+             round(latitude, 2), round(longitude, 2), timestamp
+      FROM entities
+      WHERE category = 'radiation' AND timestamp >= :since
+      ORDER BY 5 DESC
+      LIMIT 10
+    )
+
+prompt: |
+  Task: write the daily situation digest for an analyst starting their shift.
+
+  Records have a `kind`:
+  - layer_count: how many entities each layer reported in the last 24 hours (`value`).
+  - top_quake: the strongest earthquakes (`value` = magnitude).
+  - top_radiation: the highest radiation readings (`value` = CPM).
+
+  Produce:
+  1. One `info` insight titled "Daily digest" whose summary covers overall activity per layer
+     and anything that stands out (up to 3 sentences). Reference nothing in entity_ids.
+  2. Up to three further insights for individual events that deserve a closer look (a large
+     quake, an unusually high reading), each referencing its id.
+
+  Current time: {{now}}
+  Input stats: {{stats}}
+
+  Data:
+  {{records}}
+
+output:
+  max_insights: 4
+
+min_attention: info
+dedup_window: 20h
+retention: 30d

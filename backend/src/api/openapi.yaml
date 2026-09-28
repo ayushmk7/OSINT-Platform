@@ -167,6 +167,94 @@ paths:
                 required: [total, limit, offset, observations]
         '500':
           $ref: '#/components/responses/ServerError'
+  /api/insights:
+    get:
+      summary: List AI analysis insights
+      description: >-
+        Insights produced by the analysis engine (`analysis.d/`), newest first. Empty when no
+        LLM provider is configured and nothing was stored earlier. New insights are also pushed
+        live as WebSocket `ai_insight` frames carrying the same `Insight` object.
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Page size, clamped to [1, 200]. A non-numeric value is a 400.
+        - in: query
+          name: attention
+          schema:
+            $ref: '#/components/schemas/Attention'
+          description: Minimum attention level (inclusive), e.g. `medium` returns medium, high, critical.
+        - in: query
+          name: since
+          schema:
+            type: string
+            format: date-time
+          description: Only insights created strictly after this ISO 8601 timestamp.
+      responses:
+        '200':
+          description: Insights, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  limit:
+                    type: integer
+                  insights:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Insight'
+                required: [limit, insights]
+        '400':
+          description: Invalid `limit`, `attention` or `since`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/insights/status:
+    get:
+      summary: AI analysis engine status
+      description: Whether the engine runs, which provider/model it uses, and the loaded analyses.
+      responses:
+        '200':
+          description: Engine status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  reason:
+                    type: string
+                    nullable: true
+                    description: Why the engine is disabled, e.g. `ANTHROPIC_API_KEY is not set`
+                  provider:
+                    type: string
+                    nullable: true
+                  model:
+                    type: string
+                    nullable: true
+                  analyses:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        description:
+                          type: string
+                        schedule:
+                          type: string
+                        enabled:
+                          type: boolean
+                required: [enabled, reason, provider, model, analyses]
 components:
   parameters:
     SourceId:
@@ -429,3 +517,35 @@ components:
           nullable: true
           description: Always null
       required: [status, error, message, details]
+    Attention:
+      type: string
+      enum: [info, low, medium, high, critical]
+    Insight:
+      type: object
+      properties:
+        id:
+          type: string
+        analysis:
+          type: string
+          description: Name of the `analysis.d` definition that produced it
+        title:
+          type: string
+        summary:
+          type: string
+        attention:
+          $ref: '#/components/schemas/Attention'
+        created_at:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          additionalProperties: true
+          description: >-
+            `provider`, `model`, `input_records`, `input_hash`, and `data` (the analysis'
+            own structured output, when it declares `output.schema`)
+        refs:
+          type: array
+          items:
+            type: string
+          description: Entity ids the insight is about (verified to exist when stored)
+      required: [id, analysis, title, summary, attention, created_at, payload, refs]

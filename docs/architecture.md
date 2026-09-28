@@ -227,20 +227,59 @@ Queries live in `backend/src/db/queries.ts`. All filters are bound as prepared-s
 A heartbeat runs every 30 seconds (`HEARTBEAT_INTERVAL_MS`). Each round sends a protocol-level ping and an application-level `{"type":"ping"}` message, and terminates any socket that did not answer the previous round. The timer is `unref()`'d so it never keeps the process alive.
 
 `backend/src/websocket/broadcaster.ts` exports a singleton `TelemetryBroadcaster` that holds the set of live sockets and fans messages out to every open one. The scheduler calls `broadcastEntityUpdate` only for new or moved entities, so a feed that returns thousands of unchanged records produces no traffic. `broadcastEntityUpdate` normalises `metadata` to an object with `parseJsonObject()`, the same wire format as REST and `initial_state`; the frame also carries the mapper's `speed` and `heading`. `broadcastEntityRemove(ids)` sends `entity_remove` for entities the retention job expired.
+`backend/src/websocket/broadcaster.ts` exports a singleton `TelemetryBroadcaster` that holds the set of live sockets and fans messages out to every open one. The scheduler calls `broadcastEntityUpdate` only for new or moved entities, so a feed that returns thousands of unchanged records produces no traffic. `broadcastEntityUpdate` normalises `metadata` to an object with `parseJsonObject()`, the same wire format as REST and `initial_state`. The only other broadcast is `broadcastAiInsight`, called by the analysis engine for each stored insight (`ai_insight` frame).
 
 The message format is documented in [api.md](api.md#websocket-protocol).
+
+## AI analysis engine
+
+`backend/src/analysis/` runs the scheduled LLM analyses defined in `analysis.d/` (file format in [data-sources.md](data-sources.md#ai-analyses-analysisd)). `startAnalysisEngine()` is called from `index.ts`; with no provider configured it logs one info line, records the reason for `GET /api/insights/status`, and returns `null`.
+
+| Module | Role |
+| :-- | :-- |
+| `loader.ts` | Reads and validates `analysis.d/*.yaml`, applying defaults. Invalid files are skipped with a warning. |
+| `schedule.ts` | Durations, intervals and a small 5-field UTC cron parser (`nextRunTime`). |
+| `input.ts` | Builds the run input (layer query + filters, or guarded SQL), its stats and SHA-256 hash, and renders the prompt. |
+| `sql-guard.ts` | Read-only gate (`stmt.readonly`) and the child-process runner with timeout and row cap. |
+| `sql-functions.ts` | `haversine_km()` for SQLite, registered on the main and read-only connections. |
+| `providers/` | `AnthropicProvider` (Messages API, `output_config.format` JSON schema) and `OpenAiCompatibleProvider` (`/chat/completions`, `response_format` json_schema or json_object) behind one `LlmProvider` interface; `createProviderFromEnv()` picks one. Plain `fetch`, no SDK. |
+| `json-schema.ts` | Tiny JSON Schema subset: schema check, strict normalisation, validator. |
+| `engine.ts` | `AnalysisEngine`: 15 s tick, one run at a time, dedup, validation, attention gate, ref checks, retention. |
+| `store.ts` / `routes.ts` / `status.ts` | Tables, `GET /api/insights` and `/status`, engine status. |
+
+```mermaid
+flowchart LR
+  T[tick: analysis due] --> I[collect input]
+  I -->|no records| E[skip]
+  I --> D{same input hash<br/>inside dedup_window?}
+  D -->|yes| E
+  D -->|no| L[LLM, structured output] --> V[validate] --> G[min_attention<br/>max_insights]
+  G --> R[refs: in input AND in entities] --> DB[(ai_insights<br/>ai_insight_refs)]
+  DB --> BC[broadcastAiInsight] --> WS[WS ai_insight]
+  DB --> P[prune by retention]
+```
+
+The input hash is recorded only after a valid model reply, so a failed or invalid run is retried on the next schedule. Entity ids returned by the model are kept only if they were part of that run's input and still exist, so the UI never offers a hallucinated target.
+
+Tables (created by `ensureInsightTables()` when the app is built, provider or not):
+
+| Table | Columns |
+| :-- | :-- |
+| `ai_insights` | `id` (UUID), `analysis`, `title`, `summary`, `attention`, `attention_rank` (0-4, for "at least" filters), `created_at`, `payload` (JSON: `provider`, `model`, `input_records`, `input_hash`, optional `data`) |
+| `ai_insight_refs` | `insight_id`, `entity_id` (composite primary key; indexed by entity) |
 
 ## Frontend
 
 ### Store
 
-`frontend/src/store/index.ts` configures a Redux Toolkit store with three slices and one RTK Query API, and exports typed `useAppDispatch` / `useAppSelector` hooks.
+`frontend/src/store/index.ts` configures a Redux Toolkit store with four slices and one RTK Query API, and exports typed `useAppDispatch` / `useAppSelector` hooks.
 
 | Slice | File | State | Actions |
 | :-- | :-- | :-- | :-- |
 | `entities` | `slices/entitiesSlice.ts` | `entities` (by id), `selectedEntityId`, `activeCategoryFilter` (the isolated legend layer id) | `setInitialEntities`, `upsertEntity`, `removeEntities`, `setSelectedEntityId`, `setActiveCategoryFilter` |
 | `sources` | `slices/sourcesSlice.ts` | `sources` (by id, including `layer` and `display`), `enabledSourceIds` | `setSources`, `mergeSources` (keeps the user's toggles), `toggleSourceEnabled` |
 | `filter` | `slices/filterSlice.ts` | `filterMode`, `fpsVisible`, `lodEnabled`, `currentFps`, `globeStyle` | `setFilterMode`, `toggleFpsDisplay`, `toggleLod`, `updateFps`, `setGlobeStyle` |
+| `insights` | `slices/insightsSlice.ts` | `items` (newest first, max 100), `status` (engine status), `flyTo` (`{entityId, nonce}` camera request) | `setInsights`, `addInsight`, `setInsightStatus`, `requestFlyTo` |
 
 Each entity keeps a client-side `trail` of up to 20 points (`MAX_TRAIL_POINTS`), appended on every `upsertEntity`. The backend always sends `metadata` as an object; `parseEntityMetadata()` only guards the shape, returning `{}` for anything that is not a plain object, and never throws.
 
@@ -253,6 +292,7 @@ Toggling a source in the layer drawer only changes `enabledSourceIds` in the bro
 `hooks/useWebSocket.ts` connects to `ws(s)://<page host>/ws/telemetry`, using `wss` when the page is served over HTTPS. It dispatches `setSources` and `setInitialEntities` on `initial_state`, `upsertEntity` on `entity_update`, `removeEntities` on `entity_remove` and `mergeSources` on `source_update`, and replies to server `ping` messages with `pong`.
 
 `hooks/useTtlPruner.ts` (mounted by `GlobeView`) drops entities older than their source's `display.ttl_seconds` every 15 seconds, so stale contacts disappear even if an `entity_remove` frame was missed. If the socket drops, it reconnects with exponential backoff: 3 seconds, doubling, capped at 30 seconds. It returns `isConnected`, `isReconnecting`, `messageRate` (frames in the last second) and `lastSeenTimestamp`.
+`hooks/useWebSocket.ts` connects to `ws(s)://<page host>/ws/telemetry`, using `wss` when the page is served over HTTPS. It dispatches `setSources` and `setInitialEntities` on `initial_state`, `upsertEntity` on `entity_update` and `addInsight` on `ai_insight`, and replies to server `ping` messages with `pong`. If the socket drops, it reconnects with exponential backoff: 3 seconds, doubling, capped at 30 seconds. It returns `isConnected`, `isReconnecting`, `messageRate` (frames in the last second) and `lastSeenTimestamp`.
 
 ### Components
 
@@ -270,6 +310,7 @@ Toggling a source in the layer drawer only changes `enabledSourceIds` in the bro
 | `LayerControlDrawer` | Left panel. The legend is built from the sources' `layer` blocks, grouped by `layer.group` in collapsible sections with per-group counts; each row shows the layer's icon, name, description and live count, and clicking it isolates that layer id. A quick filter box appears once there are 8 or more layers. Per-source switches sit below. Before any source declares a layer, the six legacy categories are listed. |
 | `EntityDetailsDrawer` | Right-hand, non-modal inspector for the selected entity. Shows the source's `display.fields` first (formatted), then the remaining metadata and the latest 25 observations loaded over REST. For `atc_zone` entities it shows a link out to LiveATC's search page. |
 | `PerformanceControls` | Bottom-left HUD with an FPS read-out measured on `requestAnimationFrame` and the LOD switch. |
+| `InsightsPanel` | Collapsible glass card (beside the layers column on desktop, under the top bar on phones) listing AI insights: attention chip, analysis, time-ago, title, summary. Loads `GET /api/insights` and `/status` on mount; live `ai_insight` frames arrive through `useWebSocket`. Clicking an insight sets `selectedEntityId` and dispatches `requestFlyTo`, which `GlobeView` observes to fly the camera there. The empty state explains how to enable analysis. |
 
 The theme (`theme.ts`) is a dark MUI theme with a neon green primary (`#00ff9d`), magenta secondary (`#ff006e`) and a monospace font stack. `HUD_HEADER_HEIGHT` (48 px) is shared by the header and both drawers so the drawers always start below it.
 

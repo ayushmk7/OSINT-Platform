@@ -1,0 +1,63 @@
+schema_version: 1
+name: infrastructure_exposure
+description: Airports and control zones within reach of strong recent earthquakes.
+enabled: true
+# Cron (UTC): at minute 5 and 35 of every hour.
+schedule: '5,35 * * * *'
+
+input:
+  lookback: 12h
+  max_records: 200
+  sql: |
+    SELECT f.id AS facility_id,
+           f.name AS facility,
+           f.category AS facility_layer,
+           json_extract(f.metadata, '$.airport_type') AS facility_type,
+           json_extract(f.metadata, '$.municipality') AS municipality,
+           q.id AS quake_id,
+           q.name AS quake_place,
+           COALESCE(json_extract(q.metadata, '$.magnitude'), json_extract(q.metadata, '$.mag')) AS magnitude,
+           round(q.altitude / 1000.0, 1) AS depth_km,
+           q.timestamp AS quake_time,
+           round(haversine_km(f.latitude, f.longitude, q.latitude, q.longitude), 1) AS distance_km
+    FROM entities q
+    JOIN entities f
+      ON f.category IN ('atc_zone', 'atc_zones', 'airports', 'power_plants', 'nuclear_plants', 'ports')
+     AND abs(f.latitude - q.latitude) < 2.0
+     AND haversine_km(f.latitude, f.longitude, q.latitude, q.longitude) <= 150
+    WHERE q.category IN ('geological', 'earthquakes')
+      AND q.timestamp >= :since
+      AND COALESCE(json_extract(q.metadata, '$.magnitude'), json_extract(q.metadata, '$.mag'), 0) >= 5.0
+    ORDER BY magnitude DESC, distance_km ASC
+    LIMIT 200
+
+prompt: |
+  Task: assess which fixed infrastructure may be affected by strong recent earthquakes.
+
+  Each record pairs one facility (airports and control zones today; power plants and ports if
+  those layers are loaded) with an M5+ earthquake within 150 km. Shaking falls off with
+  distance and is stronger for shallow quakes; as a rough guide, a shallow M6 can damage
+  structures within a few tens of km, a deep one far less.
+
+  For each quake, produce one insight naming the facilities most exposed (closest, largest,
+  or most critical), with distances. Use `high` or `critical` only for shallow, strong events
+  close to major facilities.
+
+  Current time: {{now}}
+  Input stats: {{stats}}
+
+  Facility-quake pairs:
+  {{records}}
+
+output:
+  max_insights: 3
+  schema:
+    type: object
+    properties:
+      magnitude: { type: number }
+      facilities_exposed: { type: integer }
+      nearest_facility_km: { type: number }
+
+min_attention: medium
+dedup_window: 6h
+retention: 14d

@@ -85,6 +85,23 @@ INGEST_ENABLED=false npm run dev --prefix backend
 ```
 
 Source API keys and other secrets are also environment variables. Source YAML references them as `${NAME}` (or `${NAME:-default}`); a source whose variable is unset is skipped at startup with `source <name> disabled: missing env <NAME>`. Add the keys you have to `backend/.env`; the keys the bundled sources use are listed in `backend/.env.example`. See [Secrets and environment variables](data-sources.md#secrets-and-environment-variables).
+### AI analysis
+
+The AI analysis engine (`analysis.d/`, see [data-sources.md](data-sources.md#ai-analyses-analysisd)) stays off until a provider is configured; the backend then logs one `[analysis] AI analysis disabled: ...` line and the Insights panel shows how to enable it.
+
+| Variable | Default | Meaning |
+| :-- | :-- | :-- |
+| `MKOSINT_LLM_PROVIDER` | `anthropic` | `anthropic`, or `openai` for any OpenAI-compatible server. |
+| `ANTHROPIC_API_KEY` | none | Enables the default provider. |
+| `MKOSINT_ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Gateway/proxy override. |
+| `OPENAI_API_KEY` | none | Key for `openai`. Optional for keyless local servers. |
+| `MKOSINT_OPENAI_BASE_URL` | `https://api.openai.com/v1` | E.g. Ollama `http://localhost:11434/v1`, LM Studio `http://localhost:1234/v1`. Setting it alone is enough to enable `openai`. |
+| `MKOSINT_OPENAI_RESPONSE_FORMAT` | `json_schema` | `json_object` for servers without JSON-schema output. |
+| `MKOSINT_LLM_MODEL` | `claude-sonnet-5` / `gpt-4o-mini` | Model id for the selected provider. |
+| `MKOSINT_LLM_TIMEOUT_MS` | `120000` | Per-request timeout. |
+| `MKOSINT_ANALYSIS_DIR` | `<repo>/analysis.d` | Directory of analysis YAML files. |
+
+Each run sends up to 500 compact records to the model, so cost scales with the schedules in `analysis.d/`. Disable an analysis with `enabled: false`, or lengthen its `schedule`.
 
 To start from an empty database, stop the backend and delete `backend/mk-osint.db*`. The schema is recreated on the next start.
 
@@ -99,7 +116,7 @@ make test       # backend (jest) then frontend (vitest)
 ### Backend: Jest
 
 - Config: `backend/jest.config.js` (`ts-jest`, Node environment).
-- Tests: `backend/src/__tests__/*.test.ts`. They cover the database, field mapper, HTTP fetcher (including the retry backoff strategies), parsers, REST routes, scheduler, WebSocket server and YAML loader (including validation).
+- Tests: `backend/src/__tests__/*.test.ts`. They cover the database, field mapper, HTTP fetcher (including the retry backoff strategies), parsers, REST routes, scheduler, WebSocket server, YAML loader (including validation) and the AI analysis engine (`analysis.test.ts`: loader, schedules, SQL guard, dedup, provider request shaping with mocked `fetch`, `/api/insights`).
 - Run one file: `npx jest src/__tests__/field-mapper.test.ts` from `backend/`.
 
 ### Frontend: Vitest
@@ -107,7 +124,7 @@ make test       # backend (jest) then frontend (vitest)
 - Config: the `test` block in `frontend/vite.config.ts` (`jsdom` environment, globals on, setup file `src/test/setup.ts`, which registers the `@testing-library/jest-dom` matchers).
 - Tests live in `__tests__/` folders next to the code they cover:
   - `frontend/src/__tests__/` (theme)
-  - `frontend/src/components/__tests__/` (components, markers, globe styles, selectors, performance HUD)
+  - `frontend/src/components/__tests__/` (components, markers, globe styles, selectors, performance HUD, Insights panel)
   - `frontend/src/components/filters/__tests__/` (CRT, NVG and FLIR overlays)
   - `frontend/src/hooks/__tests__/` (`useWebSocket`)
   - `frontend/src/store/slices/__tests__/` (slices)

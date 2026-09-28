@@ -121,6 +121,31 @@ describe('useWebSocket hook', () => {
     expect(store.getState().entities.entities['moving'].latitude).toBe(5);
   });
 
+  it('adds ai_insight frames to the insights feed', () => {
+    renderHook(() => useWebSocket({ url: 'ws://localhost/test' }), { wrapper });
+
+    act(() => {
+      sockets[0].onopen?.();
+      sockets[0].onmessage?.({
+        data: JSON.stringify({
+          type: 'ai_insight',
+          data: {
+            id: 'ins-1',
+            analysis: 'radiation_outliers',
+            title: 'Elevated reading',
+            summary: 'One sensor at 5x the batch median.',
+            attention: 'medium',
+            created_at: '2026-07-26T00:03:00Z',
+            payload: {},
+            refs: ['r1']
+          }
+        })
+      });
+    });
+
+    expect(store.getState().insights.items[0]).toMatchObject({ id: 'ins-1', refs: ['r1'] });
+  });
+
   it('answers the server heartbeat with a pong', () => {
     renderHook(() => useWebSocket({ url: 'ws://localhost/test' }), { wrapper });
 

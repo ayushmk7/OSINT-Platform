@@ -10,6 +10,7 @@ import { EntityDetailsDrawer } from './components/EntityDetailsDrawer';
 import { FilterModeSelector } from './components/FilterModeSelector';
 import { GlobeStyleSelector } from './components/GlobeStyleSelector';
 import { PerformanceControls } from './components/PerformanceControls';
+import { InsightsPanel } from './components/InsightsPanel';
 import { HudPanel } from './components/HudPrimitives';
 import { CrtOverlay } from './components/filters/CrtOverlay';
 import { NightVisionOverlay } from './components/filters/NightVisionOverlay';
@@ -37,6 +38,7 @@ export const App: FC = () => {
   const theme = useTheme();
   const isPhone = useMediaQuery(theme.breakpoints.down('sm'), { noSsr: true });
   const [layersOpen, setLayersOpen] = useState(() => !isPhone);
+  const [insightsOpen, setInsightsOpen] = useState(false);
   const filterMode = useAppSelector((state) => state.filter.filterMode);
   const selectedId = useAppSelector((state) => state.entities.selectedEntityId);
 
@@ -148,6 +150,30 @@ export const App: FC = () => {
           }}
         >
           <EntityDetailsDrawer />
+        </Box>
+
+        {/* AI insights: bottom-left beside the layers column (sm+); under the top bar on phones */}
+        <Box
+          sx={{
+            position: 'absolute',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: { xs: 'flex-start', sm: 'flex-end' },
+            alignItems: { xs: 'flex-end', sm: 'flex-start' },
+            pointerEvents: 'none',
+            left: { xs: insightsOpen ? 8 : 'auto', sm: 320 },
+            right: { xs: 8, sm: 'auto' },
+            top: { xs: 72, sm: SIDE_TOP },
+            bottom: { xs: insightsOpen ? '40%' : 'auto', sm: 16 },
+            width: { sm: 320 },
+            zIndex: 2
+          }}
+        >
+          <InsightsPanel
+            open={insightsOpen}
+            onOpen={() => setInsightsOpen(true)}
+            onClose={() => setInsightsOpen(false)}
+          />
         </Box>
 
         {/* Performance chip */}

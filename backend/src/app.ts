@@ -7,6 +7,7 @@ import apiRouter from './api';
 import { notFoundHandler, sendServerError } from './api/errors';
 import { runtimeConfigHandler } from './runtime-config';
 import { mountFrontend, resolveFrontendDir, shouldServeFrontend } from './static-frontend';
+import { createInsightsRouter } from './analysis/routes';
 
 /**
  * `__dirname` is `src/` under tsx/ts-jest and `dist/` after the build, which copies the spec to
@@ -40,6 +41,7 @@ export function createApp(db: Database.Database): Express {
     });
   });
 
+  app.use('/api/insights', createInsightsRouter(db));
   app.use('/api', apiRouter);
 
   // Client-safe runtime settings (allow-listed MKOSINT_* vars only) and, when enabled, the built

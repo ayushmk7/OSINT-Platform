@@ -50,6 +50,13 @@ export class TelemetryBroadcaster {
     );
   }
 
+  /** AI analysis result (see src/analysis). `data` is the same record `GET /api/insights` returns. */
+  public broadcastAiInsight(insight: object): void {
+    this.sendToAll(
+      JSON.stringify({ type: 'ai_insight', timestamp: new Date().toISOString(), data: insight })
+    );
+  }
+
   private sendToAll(message: string): void {
     for (const client of this.clients) {
       if (client.readyState === WebSocket.OPEN) {

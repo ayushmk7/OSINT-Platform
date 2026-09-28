@@ -7,6 +7,7 @@ import {
   type EntityRecord
 } from '../store/slices/entitiesSlice';
 import { mergeSources, setSources, type SourceRecord } from '../store/slices/sourcesSlice';
+import { addInsight, type InsightRecord } from '../store/slices/insightsSlice';
 
 /** Canonical telemetry path — must match `WS_PATH` in the backend WebSocket server. */
 export const WS_TELEMETRY_PATH = '/ws/telemetry';
@@ -120,6 +121,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): WebSocketState 
           dispatch(removeEntities(payload.data.ids));
         } else if (payload.type === 'source_update' && payload.data?.sources) {
           dispatch(mergeSources(payload.data.sources));
+        } else if (payload.type === 'ai_insight' && payload.data) {
+          dispatch(addInsight(payload.data as unknown as InsightRecord));
         } else if (payload.type === 'ping') {
           // Application-level heartbeat: browsers cannot answer protocol pings from JS.
           ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));

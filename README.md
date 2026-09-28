@@ -138,6 +138,7 @@ More detail: [docs/architecture.md](docs/architecture.md) and [docs/api.md](docs
 │       ├── hooks/              useWebSocket
 │       └── store/              Redux Toolkit slices + RTK Query API
 ├── sources.d/                  active source definitions (one YAML per feed)
+├── analysis.d/                 AI analyses (scheduled LLM prompts; off until an API key is set)
 ├── skills/onboard-source/      agent skill: URL in, source YAML out, plus 19 examples
 ├── docs/
 │   ├── README.md               docs index

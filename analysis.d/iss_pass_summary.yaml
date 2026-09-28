@@ -1,0 +1,49 @@
+schema_version: 1
+name: iss_pass_summary
+description: Where the ISS has been over the last orbit and a half.
+enabled: true
+# Cron (UTC): every 3 hours on the hour.
+schedule: '0 */3 * * *'
+
+# The entity table holds only the latest ISS position, so the ground track comes from the
+# observation history instead.
+input:
+  lookback: 150m
+  max_records: 120
+  sql: |
+    SELECT o.entity_id,
+           o.timestamp,
+           round(o.latitude, 2) AS lat,
+           round(o.longitude, 2) AS lon,
+           round(o.altitude / 1000.0) AS altitude_km,
+           json_extract(o.raw_payload, '$.visibility') AS visibility
+    FROM observations o
+    JOIN entities e ON e.id = o.entity_id
+    WHERE e.category IN ('satellite', 'space', 'iss')
+      AND o.timestamp >= :since
+    ORDER BY o.timestamp ASC
+    LIMIT 120
+
+prompt: |
+  Task: summarise the International Space Station's recent ground track.
+
+  Records are timestamped ISS positions (oldest first) with `visibility` (daylight or eclipsed)
+  when the feed provides it. Write ONE insight that says, in order, which countries, oceans and
+  major cities the station passed over, roughly when (UTC), and when it crossed between
+  daylight and eclipse. Mention altitude only if it changed noticeably (a reboost).
+
+  Attention is `info` unless the altitude drops sharply or positions jump impossibly, which
+  would suggest a data problem - then use `low` and say so.
+
+  Current time: {{now}}
+  Input stats: {{stats}}
+
+  Positions:
+  {{records}}
+
+output:
+  max_insights: 1
+
+min_attention: info
+dedup_window: 3h
+retention: 2d

@@ -1,0 +1,66 @@
+schema_version: 1
+name: aircraft_near_quakes
+description: Aircraft currently flying within 300 km of a recent M4+ earthquake.
+enabled: true
+schedule: '10m'
+
+# Pairs are computed in SQL so the model only sees candidate pairs, not every track.
+# Layer ids: the legacy categories (aircraft, geological) and the newer layer ids are both
+# listed; ids that no source produces simply match nothing.
+input:
+  lookback: 6h
+  max_records: 150
+  sql: |
+    SELECT a.id AS aircraft_id,
+           a.name AS callsign,
+           json_extract(a.metadata, '$.type') AS aircraft_type,
+           round(a.altitude) AS altitude_m,
+           a.timestamp AS aircraft_seen,
+           q.id AS quake_id,
+           q.name AS quake_place,
+           COALESCE(json_extract(q.metadata, '$.magnitude'), json_extract(q.metadata, '$.mag')) AS magnitude,
+           q.timestamp AS quake_time,
+           round(haversine_km(a.latitude, a.longitude, q.latitude, q.longitude), 1) AS distance_km
+    FROM entities a
+    JOIN entities q
+      ON q.category IN ('geological', 'earthquakes')
+     AND q.timestamp >= :since
+     AND COALESCE(json_extract(q.metadata, '$.magnitude'), json_extract(q.metadata, '$.mag'), 0) >= 4.0
+     AND abs(a.latitude - q.latitude) < 3.0
+    WHERE a.category IN ('aircraft', 'aviation', 'military_aircraft')
+      AND a.timestamp >= strftime('%Y-%m-%dT%H:%M:%fZ', :now, '-15 minutes')
+      AND haversine_km(a.latitude, a.longitude, q.latitude, q.longitude) <= 300
+    ORDER BY distance_km ASC
+    LIMIT 150
+
+prompt: |
+  Task: flag aircraft operating near recent significant earthquakes.
+
+  Each record is one (aircraft, earthquake) pair within 300 km. Aircraft are from a military
+  ADS-B feed. Consider:
+  - Aircraft that appear to be responding (rotary wing, transport or surveillance types, low
+    altitude, several aircraft converging on the same quake).
+  - Aircraft simply transiting at cruise altitude are routine; mention them only as context.
+  - Larger magnitude and shorter distance matter more.
+
+  Group pairs that share a quake into one insight. Reference both the aircraft ids and the
+  quake id in entity_ids.
+
+  Current time: {{now}}
+  Input stats: {{stats}}
+
+  Pairs:
+  {{records}}
+
+output:
+  max_insights: 4
+  schema:
+    type: object
+    properties:
+      quake_magnitude: { type: number }
+      aircraft_count: { type: integer }
+      closest_km: { type: number }
+
+min_attention: low
+dedup_window: 1h
+retention: 3d

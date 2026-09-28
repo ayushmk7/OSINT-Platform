@@ -599,3 +599,86 @@ After adding a file, restart the backend and watch its log for `Skipping invalid
 | `wri_power_plants.yaml` | radiation | csv | WRI Global Power Plant Database |
 
 Several examples map a non-matching feed onto the closest canonical category so it gets a marker. For instance, military bases and airports use `aircraft`, and power plants use `radiation`.
+
+## AI analyses (`analysis.d/`)
+
+Sources fill the database; analyses read it. Each file in `analysis.d/` at the repo root (override with `MKOSINT_ANALYSIS_DIR`) defines one scheduled LLM analysis whose results appear as insights in the UI. The engine is inert until an LLM provider is configured (see [development.md](development.md#ai-analysis)); how runs are executed is in [architecture.md](architecture.md#ai-analysis-engine).
+
+```yaml
+schema_version: 1              # optional, only 1 is accepted
+name: quake_swarm_detection    # required, unique, lowercase snake_case
+description: One line shown by GET /api/insights/status.
+enabled: true                  # default true
+schedule: '15m'                # interval (>= 10s) or 5-field cron in UTC, e.g. '5,35 * * * *'
+
+input:                         # exactly one of `layers` or `sql`
+  layers: [geological, earthquakes]   # layer ids (entities.category); unknown ids match nothing
+  lookback: 6h                 # default 1h: entities with timestamp >= now - lookback
+  max_records: 200             # default 200, capped at 500
+  filter:                      # optional, ALL must hold (layers input only)
+    - { field: metadata.magnitude, op: '>=', value: 4 }
+  run_if_empty: false          # default false: an empty input never calls the model
+
+  # or, instead of layers/filter:
+  sql: |
+    SELECT id, name, latitude, longitude FROM entities
+    WHERE category = 'aircraft' AND timestamp >= :since
+
+prompt: |                      # the user message; {{records}} {{stats}} {{now}} are substituted
+  ...
+
+output:
+  max_insights: 5              # default 5, 1-20
+  schema:                      # optional: structured `data` object on every insight
+    type: object
+    properties:
+      peak_cpm: { type: number }
+      assessment: { type: string, enum: [elevated, sensor_fault] }
+
+min_attention: low             # info | low | medium | high | critical (default low)
+dedup_window: 6h               # default 24h: identical input inside the window is skipped
+retention: 7d                  # default 7d: this analysis's older insights are deleted
+```
+
+Durations use `ms`, `s`, `m`, `h` or `d`. Cron fields accept `*`, numbers, ranges `a-b`, lists `a,b` and steps `*/n`; day-of-week 0 and 7 are Sunday; when day-of-month and day-of-week are both restricted, either may match.
+
+### Layer input
+
+Reads `entities` whose `category` is one of `layers` and whose `timestamp` is inside the lookback, newest first. Filters run on up to 5,000 candidate rows before `max_records` is applied. Filter fields: `name`, `category`, `source_id`, `latitude`, `longitude`, `altitude`, `timestamp`, `metadata.<path>`. Operators: `==`, `!=`, `>`, `>=`, `<`, `<=` (numeric), `in` (list), `contains` (case-insensitive substring), `exists`.
+
+Layer ids are deliberately not checked against the loaded sources: sources come and go, and the legacy categories (`geological`, `aircraft`) are being joined by newer layer ids (`earthquakes`, ...). List both when in doubt; an id nothing produces just matches no rows.
+
+Each record reaches the model as one compact JSON line: `id`, `layer`, `name`, `lat`, `lon`, `alt`, `ts`, `meta` (long strings clipped, at most 25 metadata keys).
+
+### SQL input
+
+For joins and aggregates. The query must be one `SELECT` (or `WITH ... SELECT`) and passes three guards:
+
+1. A syntactic check at load time (no `;` except a trailing one).
+2. `stmt.readonly && stmt.reader` from better-sqlite3 (SQLite's own read-only test), so `DELETE ... RETURNING`, CTE-wrapped writes, `PRAGMA` assignments and `ATTACH` are refused.
+3. Execution in a short-lived child process on a **separate read-only connection**, SIGKILLed after 5 s, returning at most 500 rows (or `max_records` if lower).
+
+`:since` (now minus `lookback`) and `:now` are bound as ISO 8601 strings when the query uses them. Entity timestamps are ISO 8601 strings, so compare as strings or build bounds with `strftime('%Y-%m-%dT%H:%M:%fZ', :now, '-15 minutes')`. `haversine_km(lat1, lon1, lat2, lon2)` (great-circle km, NULL if any argument is NULL) is available; pre-filter joins with a cheap latitude band such as `abs(a.latitude - b.latitude) < 3`. String columns named `id` or ending in `_id` count as entity references.
+
+### Prompt and output
+
+The file's `prompt` is the user message; a fixed system prompt (`SYSTEM_PROMPT` in `backend/src/analysis/engine.ts`) sets the role, the attention scale, the id rules, and that record content is untrusted data, not instructions.
+
+| Placeholder | Value |
+| :-- | :-- |
+| `{{records}}` | Input records as JSON lines, or `(no records)`. Appended at the end if the template omits it. |
+| `{{stats}}` | JSON: `total`, `truncated`, `by_layer`, `oldest`, `newest`, `lookback_hours`. |
+| `{{now}}` | Run time, ISO 8601 UTC. |
+
+The model must return `{"insights": [...]}`, each item with `title`, `summary`, `attention`, `entity_ids` and, when `output.schema` is set, `data`. The schema subset is `type`, `properties`, `required`, `items`, `enum`, `description`; every object is closed (`additionalProperties: false`) and every declared property becomes required, the strict form both providers' structured-output modes expect.
+
+### Shipped analyses
+
+| File | Input | Schedule | Looks for |
+| :-- | :-- | :-- | :-- |
+| `aircraft_near_quakes.yaml` | SQL: aircraft within 300 km of M4+ quakes | every 10 min | Military aircraft operating near recent quakes (possible response flights). |
+| `radiation_outliers.yaml` | `radiation` layer, 24 h | every 30 min | Readings far above comparable sensors, clusters, sensor faults. |
+| `quake_swarm_detection.yaml` | SQL: quakes with neighbour counts within 50 km | every 15 min | Swarms and aftershock sequences. |
+| `infrastructure_exposure.yaml` | SQL: facilities within 150 km of M5+ quakes | `5,35 * * * *` | Airports / control zones (and power plants, ports when loaded) exposed to shaking. |
+| `iss_pass_summary.yaml` | SQL over ISS observations, 150 min | `0 */3 * * *` | Plain-language ground-track summary. |
+| `daily_situation_digest.yaml` | SQL: per-layer counts plus top quakes and readings | `0 6 * * *` | Shift-start digest. |
