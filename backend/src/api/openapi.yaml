@@ -240,7 +240,116 @@ components:
           type: integer
         enabled:
           type: boolean
-      required: [id, name, type, transport, url, update_interval_sec, enabled]
+        layer:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/SourceLayer'
+          description: Legend layer (defaults applied). Null only for rows written before layers existed.
+        display:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/SourceDisplay'
+          description: Marker style + entity card (defaults applied). Null only for legacy rows.
+      required: [id, name, type, transport, url, update_interval_sec, enabled, layer, display]
+    SourceLayer:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z][a-z0-9_]*$'
+          description: Layer key; also the default `entities.category` for this source.
+        name:
+          type: string
+        group:
+          type: string
+          enum:
+            [
+              Aviation,
+              Maritime,
+              Space,
+              Hazards,
+              Weather,
+              Environment,
+              Conflict,
+              Infrastructure,
+              Cyber,
+              News,
+              Other
+            ]
+        description:
+          type: string
+      required: [id, name, group, description]
+    SourceDisplay:
+      type: object
+      properties:
+        declared:
+          type: boolean
+          description: False when the YAML had no `display:` block (clients use their legacy style).
+        icon:
+          type: string
+          description: Icon registry key, e.g. `plane`, `quake`, `dot`.
+        color:
+          type: string
+          example: '#ff3b6b'
+        color_by:
+          type: object
+          properties:
+            field:
+              type: string
+              description: Entity path, e.g. `metadata.mag`, `altitude`, `speed`, `heading`.
+            stops:
+              type: array
+              items:
+                type: array
+                minItems: 2
+                maxItems: 2
+                items: {}
+              description: Ascending `[number, colour]` pairs, interpolated.
+            map:
+              type: object
+              additionalProperties:
+                type: string
+            default:
+              type: string
+          required: [field]
+        size:
+          type: number
+        rotate:
+          type: boolean
+        trail:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            max_points:
+              type: integer
+        ttl:
+          type: string
+          nullable: true
+        ttl_seconds:
+          type: integer
+          nullable: true
+          description: Entities older than this are hidden and pruned server-side.
+        fields:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              label:
+                type: string
+              format:
+                type: string
+                enum: [text, number, datetime, link, bool]
+              precision:
+                type: integer
+              prefix:
+                type: string
+              suffix:
+                type: string
+            required: [path, label, format]
+      required: [declared, icon, color, size, rotate, trail, ttl, ttl_seconds, fields]
     Entity:
       type: object
       properties:

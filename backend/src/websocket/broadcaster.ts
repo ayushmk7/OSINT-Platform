@@ -38,6 +38,18 @@ export class TelemetryBroadcaster {
     );
   }
 
+  /** Entities deleted server-side (ttl expiry): clients drop them from the globe. */
+  public broadcastEntityRemove(ids: string[]): void {
+    if (ids.length === 0) return;
+    this.sendToAll(
+      JSON.stringify({
+        type: 'entity_remove',
+        timestamp: new Date().toISOString(),
+        data: { ids }
+      })
+    );
+  }
+
   private sendToAll(message: string): void {
     for (const client of this.clients) {
       if (client.readyState === WebSocket.OPEN) {

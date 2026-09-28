@@ -10,6 +10,9 @@ export interface EntityRecord {
   altitude: number;
   timestamp: string;
   metadata: Record<string, unknown>;
+  /** Latest speed / heading, carried on the live `entity_update` frame (not stored on entities). */
+  speed?: number;
+  heading?: number;
 }
 
 export interface ObservationRecord {
@@ -244,7 +247,9 @@ export function mapRecord(
     longitude: lon,
     altitude: alt,
     timestamp: isoTimestamp,
-    metadata
+    metadata,
+    speed,
+    heading
   };
 
   // Deterministic, mode-aware observation id — the core of deduplication.

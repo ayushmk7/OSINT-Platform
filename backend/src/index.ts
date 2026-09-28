@@ -6,6 +6,7 @@ import { createApp } from './app';
 import { IngestionScheduler } from './engine/scheduler';
 import { setupWebSocketServer, WS_PATH } from './websocket/server';
 import { broadcaster } from './websocket/broadcaster';
+import { startRetention } from './engine/retention';
 
 dotenv.config();
 
@@ -26,6 +27,8 @@ const scheduler = new IngestionScheduler(db, SOURCES_DIR);
 // updates, because nothing ever pushes a live frame.
 scheduler.onEntityUpdate = (entity) => broadcaster.broadcastEntityUpdate(entity);
 
+let retention: { stop: () => void } | null = null;
+
 server.listen(PORT, () => {
   console.log(`MK-OSINT backend running on port ${PORT} (ws ${WS_PATH})`);
   if (process.env.INGEST_ENABLED === 'false') {
@@ -35,11 +38,17 @@ server.listen(PORT, () => {
     console.log(`Ingestion engine starting from ${SOURCES_DIR}`);
     scheduler.start();
   }
+  // TTL expiry + DB size guard (MKOSINT_DB_MAX_MB), every 60s.
+  retention = startRetention(db, {
+    getConfigs: () => scheduler.getConfigs(),
+    onRemove: (ids) => broadcaster.broadcastEntityRemove(ids)
+  });
 });
 
 function shutdown(signal: string): void {
   console.log(`Received ${signal}, shutting down...`);
   scheduler.stop();
+  retention?.stop();
   for (const client of wss.clients) {
     client.terminate();
   }

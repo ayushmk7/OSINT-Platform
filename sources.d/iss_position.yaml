@@ -5,6 +5,24 @@ layer_type: space
 display_name: 'ISS Position Tracker'
 enabled: true
 
+layer:
+  id: satellite
+  name: Space stations
+  group: Space
+  description: ISS live position
+
+display:
+  icon: iss
+  color: '#00f3ff'
+  size: 1.3
+  trail: { enabled: true, max_points: 50 }
+  # No ttl: the ISS is always somewhere.
+  fields:
+    - { path: altitude, label: Altitude, format: number, precision: 0, suffix: ' m' }
+    - { path: metadata.velocity, label: Velocity, format: number, precision: 0, suffix: ' km/h' }
+    - { path: metadata.visibility, label: Visibility }
+    - { path: timestamp, label: Sample time, format: datetime }
+
 transport:
   type: http_poll
   url: 'https://api.wheretheiss.at/v1/satellites/25544'
@@ -26,7 +44,6 @@ parser:
 entity:
   external_id: 'id'
   name: 'name'
-  category: 'satellite'
   metadata:
     visibility: 'visibility'
     velocity: 'velocity'

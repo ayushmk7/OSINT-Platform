@@ -5,6 +5,26 @@ layer_type: earthquakes
 display_name: 'USGS Earthquakes'
 enabled: true
 
+layer:
+  id: geological
+  name: Earthquakes
+  group: Hazards
+  description: USGS, past hour
+
+display:
+  icon: quake
+  color: '#ff0055'
+  color_by:
+    field: metadata.magnitude
+    stops: [[0, '#ffd166'], [3, '#ff9e00'], [5, '#ff3b3b'], [7, '#ff0055']]
+  size: 1.0
+  # Quakes older than a day drop off the globe.
+  ttl: '24h'
+  fields:
+    - { path: metadata.magnitude, label: Magnitude, format: number, precision: 1 }
+    - { path: metadata.depth, label: Depth, format: number, precision: 1, suffix: ' km' }
+    - { path: timestamp, label: Origin time, format: datetime }
+
 transport:
   type: http_poll
   url: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson'
@@ -27,7 +47,6 @@ parser:
 entity:
   external_id: 'id'
   name: 'properties.place'
-  category: 'geological'
   metadata:
     magnitude: 'properties.mag'
     depth: 'geometry.coordinates[2]'
