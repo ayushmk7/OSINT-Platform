@@ -60,7 +60,7 @@ All code lives in `backend/src/engine/`.
 
 ### yaml-loader (`yaml-loader.ts`)
 
-`loadSourcesFromDir(dir)` reads every `*.yaml` / `*.yml` file in the directory in sorted order and parses it with the `yaml` package. Each parsed file goes through `validateSourceConfig()`, which returns every problem it finds: a missing or empty `name`, `source_type`, `transport.type`, `transport.url`, `parser.format`, `entity.external_id`, `observation.latitude` or `observation.longitude`; a `schema_version` other than `1` (`SUPPORTED_SCHEMA_VERSIONS`; absent means 1); a `transport.retry.backoff` outside `exponential`, `linear`, `fixed`; or an `observation.scale` entry that is not one of `SCALABLE_OBSERVATION_FIELDS` or not a finite number. Invalid files are logged as `Skipping invalid source definition <path>: <problems>` and unparseable files are logged too; both are skipped and never abort the load.
+`loadSourcesFromDir(dir)` reads every `*.yaml` / `*.yml` file in the directory in sorted order and parses it with the `yaml` package. Each parsed file goes through `validateSourceConfig()`, which returns every problem it finds: a missing or empty `name`, `source_type`, `transport.type`, `transport.url`, `parser.format`, `entity.external_id`, `observation.latitude` or `observation.longitude`; a `schema_version` other than `1` (`SUPPORTED_SCHEMA_VERSIONS`; absent means 1); a `transport.retry.backoff` outside `exponential`, `linear`, `fixed`; or an `observation.scale` entry that is not one of `SCALABLE_OBSERVATION_FIELDS` or not a finite number; a `parser.format` outside `PARSER_FORMATS`, malformed `parser.csv` / `array_columns`, a `recording.mode` outside `RECORDING_MODES`, an unparseable `recording.max_age`, a filter rule with neither `field` nor `expr`, or an expression with a syntax error. `lookups:` file tables are then loaded by `resolveLookups()`; a failure there also skips the file. Invalid files are logged as `Skipping invalid source definition <path>: <problems>` and unparseable files are logged too; both are skipped and never abort the load.
 
 The file also defines the canonical category list, `ENTITY_CATEGORIES`:
 
@@ -80,7 +80,8 @@ The full schema is documented in [data-sources.md](data-sources.md).
 
 - `initSources()` loads the configs and upserts one row per source into the `sources` table (`id` = `name`, `name` = `display_name`, `type` = `source_type`, `transport` = `transport.type`, `update_interval_sec` = parsed interval, `enabled` = 0 or 1). If a row cannot be written, the error is logged and that source is dropped from the configs (never polled) instead of aborting startup.
 - `start()` calls `initSources()`, then for each source that is not `enabled: false` polls once immediately and again every `transport.interval` (default 60 seconds) with `setInterval`.
-- `pollSource(config)` runs one fetch, parse, filter, map and persist cycle inside a single SQLite transaction and returns the number of records written. Errors are logged with the source name and the method returns 0, so one failing feed never stops the others.
+- `pollSource(config)` runs one fetch, parse, filter, map and persist cycle inside a single SQLite transaction and returns the number of records written. Errors are logged with the source name and the method returns 0, so one failing feed never stops the others. Counters for the poll (`written`, `skipped`, `filtered`, `unlocated`, `duplicates`, `stale`) are kept in `lastStats`.
+- For orbital formats (`tle`, `omm_json`) the parsed element sets are cached per source and propagated to "now" before mapping. `repropagate(config)` re-propagates the cached sets without fetching; `start()` schedules it every `transport.propagate_interval`.
 
 Within a poll:
 
@@ -115,14 +116,28 @@ After the transaction commits, `onEntityUpdate` is called for each changed entit
 
 ### parsers (`parsers/`)
 
-`parsePayload(content, format, recordsPath, maxRecords)` dispatches on `parser.format` and then truncates to `max_records` if set.
+`parsePayload(content, format, recordsPath, maxRecords, options)` dispatches on `parser.format` and then truncates to `max_records` if set. `options` is the source's `parser` block (`csv`, `object_to_records`, `key_field`, `array_columns`).
 
 | Format | Implementation | Behaviour |
 | :-- | :-- | :-- |
 | `json` | `JSON.parse` | Walks `records_path` (dot notation). A top-level array is used as-is; an object is wrapped as a single record (for example, the ISS endpoint). |
 | `geojson` | `JSON.parse` | Same, but `records_path` defaults to `features`. |
 | `xml` | `fast-xml-parser` with `ignoreAttributes: false` | Walks `records_path` to the repeated element (for example `rss.channel.item`). A single element is wrapped into a one-element array. |
-| `csv` | `papaparse` with `header: true`, `skipEmptyLines: true` | The header row becomes the record keys. Values stay strings and are coerced later by the mapper. |
+| `csv` | `papaparse` with `header: true`, `skipEmptyLines: true` | The header row becomes the record keys. Values stay strings and are coerced later by the mapper. With `parser.csv`, lines are pre-filtered (`skip_lines`, `comment_prefix`), split by the given delimiter or on whitespace, and keyed by the header, `columns` or `c0..cN`. |
+| `json` reshaping | `reshapeJson()` in `json-parser.ts` | `object_to_records` turns an object map into records (key in `key_field`, default `_key`); `array_columns` zips array rows with a column list or a header row. |
+| `rss` | `rss-parser.ts`, `fast-xml-parser` | Finds RSS 2.0 / RDF / Atom items and normalizes them to `{title, link, description, published, guid, categories, author, lat, lon}` (GeoRSS simple, GML and W3C geo). |
+| `tle` | `tle-parser.ts` | 3-line and 2-line element sets to element records carrying `line1`/`line2`. |
+| `omm_json` | `tle-parser.ts` | CelesTrak GP JSON; `ommToTle()` synthesizes canonical TLE lines (with checksums) so both formats share one SGP4 path. |
+
+### orbit (`orbit.ts`)
+
+`propagateRecords(records, date)` runs SGP4 (`satellite.js` v5, the last CommonJS release) on each element record and adds `lat`, `lon`, `alt` (m), `speed` (ECI speed, m/s), `heading` (bearing of the ground track over the next second) and `timestamp`. Parsed `satrec`s are cached in a `WeakMap` keyed by the element record, so re-propagation ticks only pay for the propagation. Sets that SGP4 rejects (decayed, malformed) are dropped.
+
+### expressions (`expressions.ts`), lookups (`lookups.ts`), dedupe (`dedupe.ts`)
+
+- `expressions.ts` is a tokenizer, Pratt parser and tree-walking evaluator for `=expr` mapping values and `filter[].expr`. There is no `eval`/`Function`; identifiers read only own properties of the record (never `__proto__`, `constructor` or `prototype`), and calls resolve only to a fixed helper table. Compiled expressions are cached by source text. `collectExpressionErrors()` is called by `validateSourceConfig()`, so syntax errors reject the file at load.
+- `lookups.ts` resolves the top-level `lookups:` block (inline maps, or `.json`/`.csv` files confined to the sources directory) once at load.
+- `dedupe.ts` computes the `recording.mode: dedupe` identity: sha256 over a key-sorted JSON of `dedupe_fields` values, or of the mapped entity.
 
 ### field-mapper (`field-mapper.ts`)
 
@@ -134,6 +149,9 @@ After the transaction commits, `onEntityUpdate` is called for each changed entit
   - `upsert`: `obs_<entity id>`
   - `append` with a source timestamp: `obs_<entity id>_<epoch_ms>`
   - `append` without a source timestamp: `obs_<entity id>_<lat.toFixed(4)>_<lon.toFixed(4)>`, so a stationary target does not create a new row on every poll.
+  - `dedupe`: `obs_<entity id>_<sha256>`. The scheduler skips a record whose id already exists (before touching the entity), otherwise upserts the entity and inserts the observation, replacing a row with the same `(entity_id, timestamp)`.
+- `resolveValue(obj, expr, ctx)` evaluates values starting with `=` as expressions; `expressionContext(config)` supplies the lookup tables. `isUnlocated(raw, config)` lets the scheduler count records dropped under `observation.optional`.
+- Records older than `recording.max_age` are dropped by the scheduler after mapping.
 
 ## Database schema
 

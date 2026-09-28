@@ -34,6 +34,7 @@ This page documents the schema as implemented in `backend/src/engine/yaml-loader
 | `entity` | object | **yes** | | Identity and metadata mapping. |
 | `observation` | object | **yes** | | Position and kinematics mapping. |
 | `recording` | object | no | `{ mode: append }` | How observations are stored. |
+| `lookups` | map | no | | Named tables for the `lookup()` expression helper. See [lookups](#lookups). |
 
 ### `transport`
 
@@ -56,6 +57,7 @@ This page documents the schema as implemented in `backend/src/engine/yaml-loader
 | `retry.initial_delay` | duration | no | `1s` | Delay before the second attempt. |
 | `retry.max_delay` | duration | no | `15s` | Cap on any single delay. |
 | `retry.backoff` | `exponential` \| `linear` \| `fixed` | no | `exponential` | How the delay grows. Any other value makes the file invalid. |
+| `propagate_interval` | duration | no | | Orbital formats only (`tle`, `omm_json`). Re-propagates the cached element sets to the current time this often, without refetching. `interval` still controls how often fresh elements are downloaded. |
 
 The retry defaults come from `DEFAULT_RETRY` in `backend/src/engine/retry.ts`, the one policy shared by the scheduler and `fetchUrl()`. The delay after failed attempt *n* (1-based) is computed by `retryDelayMs()` and always capped at `max_delay`:
 
@@ -151,6 +153,7 @@ Durations (`interval`, `timeout`, `retry.initial_delay`, `retry.max_delay`) are 
 | `"30s"` or `"30"` | 30 seconds. A missing unit means seconds. |
 | `"5m"` | 5 minutes. |
 | `"24h"` | 24 hours. |
+| `"7d"` | 7 days. |
 | `"1500ms"` | Rounded to whole seconds, with a minimum of 1 second. |
 | `45` (a YAML number) | 45 seconds. |
 
@@ -160,16 +163,45 @@ Units are case-insensitive and decimals are allowed (`"1.5m"`). The result is al
 
 | Field | Type | Required | Default | Meaning |
 | :-- | :-- | :-- | :-- | :-- |
-| `format` | `json` \| `geojson` \| `xml` \| `csv` | **yes** | | Response format. Any other value fails every poll with `Unsupported parser format`. |
-| `records_path` | string | no | root (`features` for `geojson`) | Dot-notation path to the array of records, for example `ac`, `results.bindings` or `rss.channel.item`. |
-| `max_records` | number | no | unlimited | Keep only the first N records per poll. |
+| `format` | `json` \| `geojson` \| `xml` \| `csv` \| `rss` \| `tle` \| `omm_json` | **yes** | | Response format. Any other value makes the file invalid. |
+| `records_path` | string | no | root (`features` for `geojson`) | Dot-notation path to the array of records, for example `ac`, `results.bindings` or `rss.channel.item`. Ignored by `rss` and `tle`. |
+| `max_records` | number | no | unlimited | Keep only the first N records per poll (for `tle`/`omm_json`: element sets). |
+| `csv` | map | no | | CSV options, see below. |
+| `object_to_records` | boolean | no | `false` | `json`: the value at `records_path` is an object map (`{"KJFK": {...}, "EGLL": {...}}`); each entry becomes a record and the key is stored in `key_field`. Non-object values become `{<key_field>: key, value: v}`. |
+| `key_field` | string | no | `_key` | Field that receives the map key with `object_to_records`. |
+| `array_columns` | list of string \| `header` | no | | `json`: rows that are arrays become objects with these keys (for example OpenSky `states`). `header` uses the first row as the column names. Columns beyond the list are named `c<index>`. |
+
+`parser.csv` options (without the block, CSV keeps its default: header row, auto-detected delimiter):
+
+| Field | Type | Default | Meaning |
+| :-- | :-- | :-- | :-- |
+| `delimiter` | string | auto | A literal delimiter (`,`, `;`, `\|`, `'\t'`), or `whitespace` to split on runs of spaces and tabs (space-aligned text tables). |
+| `has_header` | boolean | `true` | `false`: the first row is data; columns are named from `columns`, else `c0`, `c1`, ... |
+| `columns` | list of string | | Column names. Also override an existing header row. Extra columns fall back to `c<index>`. |
+| `skip_lines` | integer | `0` | Leading lines to drop (banners, preambles) before the header. |
+| `comment_prefix` | string | | Lines whose first non-blank characters are this prefix (for example `#`) are ignored. |
+
+Line-based options (`skip_lines`, `comment_prefix`) work on physical lines, so do not combine them with quoted fields that span lines.
 
 How each format produces records:
 
 - **json**: the value at `records_path`, or the whole document if it is omitted or `""`. An array is used as-is. A single object becomes one record, which suits endpoints like the ISS position API. Anything else yields no records.
 - **geojson**: as `json`, but `records_path` defaults to `features`. Each record is a GeoJSON Feature, so paths look like `geometry.coordinates[1]` and `properties.mag`.
 - **xml**: parsed with `fast-xml-parser` with attributes kept. Attributes appear as keys prefixed with `@_` (for example `@_id`). A repeated element that occurs only once is wrapped into a one-element array.
-- **csv**: the first row is the header, and each following row becomes an object keyed by column name. Empty lines are skipped. All values are strings; the mapper converts coordinates and numbers.
+- **csv**: the first row is the header, and each following row becomes an object keyed by column name. Empty lines are skipped. All values are strings; the mapper converts coordinates and numbers. See `parser.csv` above for header-less, whitespace-delimited and commented files.
+- **rss**: RSS 2.0, RSS 1.0 (RDF) and Atom. Every item is normalized to `{title, link, description, published, guid, categories, author, lat, lon}`. `published` is ISO 8601 when the date parses (`pubDate`, `published`, `dc:date` or `updated`). `guid` falls back to the Atom `id`, then the link, then the title. `lat`/`lon` come from `georss:point`, `georss:where/gml:Point/gml:pos` or `geo:lat`/`geo:long`, and are `null` otherwise, so most news feeds need `observation.optional: true`. No geocoding is done.
+- **tle**: plain-text two-line element sets, in 3-line (name, line 1, line 2; a `0 ` name prefix is stripped) or 2-line form (named `NORAD <id>`). Each set becomes `{name, norad_id, intl_designator, epoch, inclination, eccentricity, mean_motion, period_min, line1, line2}`.
+- **omm_json**: CelesTrak GP JSON (OMM keywords such as `OBJECT_NAME`, `NORAD_CAT_ID`, `EPOCH`, `MEAN_MOTION`). Each record keeps its OMM fields and gains the same fields as `tle`. Records missing mandatory elements are dropped.
+
+For `tle` and `omm_json` the scheduler propagates every element set with SGP4 (`satellite.js`) to the current time on each poll, and on every `transport.propagate_interval` tick. Each record then also carries `lat`, `lon` (degrees), `alt` (metres above the ellipsoid), `speed` (inertial speed, m/s), `heading` (ground-track bearing, degrees from north) and `timestamp` (the propagation instant). Map them like any other field; use `recording.mode: upsert` for a current-position layer:
+
+```yaml
+transport: { type: http_poll, url: 'https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=json', interval: 6h, propagate_interval: 10s }
+parser: { format: omm_json, max_records: 500 }
+entity: { external_id: norad_id, name: name, metadata: { epoch: epoch, object_id: intl_designator } }
+observation: { latitude: lat, longitude: lon, altitude: alt, speed: speed, heading: heading, timestamp: timestamp }
+recording: { mode: upsert }
+```
 
 `records_path` supports dots only. Bracket indices such as `data[0]` are not supported there, unlike mapping paths.
 
@@ -182,8 +214,9 @@ An optional list of rules. A record must pass **every** rule to be mapped. Recor
 | `field` | path | Path into the raw record (same syntax as mapping paths). |
 | `in` | list of string or number | The value, trimmed and compared as a string, must equal one of these. A missing or blank value fails. |
 | `not_empty` | boolean | When `true`, the value must be present and not blank. |
+| `expr` | expression | The [expression](#expression-language) must be truthy, for example `mag >= 2.5`. A leading `=` is optional here. |
 
-A rule with both `in` and `not_empty` applies both checks.
+A rule with both `in` and `not_empty` applies both checks. A rule needs `field` or `expr` (or both); a rule with neither makes the file invalid.
 
 ```yaml
 filter:
@@ -255,8 +288,9 @@ A derived field that resolves to nothing and has no `default` is omitted rather 
 | `heading` | expression | no | `0` | Stored on observations only. The globe computes marker rotation from the entity's trail, not from this field. |
 | `timestamp` | expression | no | ingest time | Source time of the sample. |
 | `scale` | map of field to number | no | | Multiplies a resolved value by a constant. See below. |
+| `optional` | boolean | no | `false` | For partly geo-tagged feeds (RSS). Records whose coordinates do not resolve are dropped silently: counted as `unlocated` in the poll stats, not warned about. |
 
-Latitude and longitude are converted with `parseFloat`. If either is missing or not a finite number, the record is skipped and counted in the warning `skipped N record(s) with missing id/coordinates`. It is never plotted at (0, 0). Unparseable altitude, speed or heading values become `0`.
+Latitude and longitude are converted with `parseFloat`. If either is missing or not a finite number, the record is skipped and counted in the warning `skipped N record(s) with missing id/coordinates` (unless `optional: true`). It is never plotted at (0, 0). Unparseable altitude, speed or heading values become `0`.
 
 #### `observation.scale`
 
@@ -285,7 +319,7 @@ Timestamps are normalized to ISO 8601:
 
 ### Expressions and path syntax
 
-Mapping values (`external_id`, `name`, `metadata.*`, `observation.*`, `filter[].field`, `derived.*.from` and template placeholders) are **paths** into the raw record. They are not a query or expression language.
+Mapping values (`external_id`, `name`, `metadata.*`, `observation.*`, `filter[].field`, `derived.*.from` and template placeholders) are **paths** into the raw record, unless the value starts with `=`, which makes it an [expression](#expression-language) (`external_id`, `name`, `metadata.*` and `observation.*` only).
 
 | Syntax | Example | Resolves to |
 | :-- | :-- | :-- |
@@ -297,7 +331,59 @@ Mapping values (`external_id`, `name`, `metadata.*`, `observation.*`, `filter[].
 
 For `external_id`, `name`, `metadata.*` and `observation.*`, the engine tries the value as a path first. If that finds nothing and the value is numeric, it becomes a literal number. This is how `altitude: '0'` produces a constant 0. When the record is an array, `'0'` resolves to its first element rather than a literal. Filter fields, `derived.*.from` and template placeholders are always paths.
 
-Keys that contain dots cannot be addressed. There are no functions, conditionals or arithmetic.
+Keys that contain dots cannot be addressed by a path; use an expression such as `=$['georss:point']`.
+
+#### Expression language
+
+A mapping value that starts with `=` is an **expression** instead of a path. This works for `external_id`, `name`, `metadata.*`, every `observation.*` field and `recording.dedupe_fields`, and `filter[].expr` is always an expression. Values without `=` keep working as paths.
+
+```yaml
+entity:
+  name: '=trim(callsign) ?? hex'
+  metadata:
+    model: "=lookup('aircraft_types', t, 'unknown')"
+observation:
+  altitude: "=alt_baro == 'ground' ? 0 : alt_baro * 0.3048"
+  timestamp: '=unix_ms(seen)'
+filter:
+  - expr: 'mag >= 2.5'
+```
+
+The evaluator is a small hand-written parser in `backend/src/engine/expressions.ts`. It never uses `eval` or `Function`, and identifiers read only the record's own properties, so prototypes and globals are unreachable. Syntax errors make the file invalid at load time. Errors at run time leave the field unresolved.
+
+| Syntax | Meaning |
+| :-- | :-- |
+| `a`, `a.b`, `a[0]`, `a['x-y']`, `$` | Field access; `$` is the whole record. A missing field is `undefined`. |
+| `1.5`, `'text'`, `"text"`, `true`, `false`, `null` | Literals. |
+| `+ - * / %` | Arithmetic. Numeric strings count as numbers (`'5' + 1` is 6); otherwise `+` concatenates. A non-finite result (`1 / 0`, `'x' * 2`) is `null`. |
+| `== != < <= > >=` | Comparison. Numeric strings compare as numbers. Comparisons with a missing value are false. `=== !==` are strict. |
+| `&& \|\| !` or `and or not` | Logic (short-circuit). |
+| `a ?? b` | `b` when `a` is null, undefined or NaN. |
+| `c ? a : b` | Conditional. |
+
+Helpers:
+
+| Helper | Returns |
+| :-- | :-- |
+| `now()` | Current epoch milliseconds. |
+| `unix_ms(x)`, `unix_s(x)` | Epoch milliseconds / seconds from epoch seconds, epoch milliseconds (values above 1e11) or a date string. |
+| `parse_date(x)` | ISO 8601 string, or `null`. |
+| `number(x)`, `string(x)` | Conversions (`number` gives `null` for non-numeric text). |
+| `lower(x)`, `upper(x)`, `trim(x)`, `concat(a, b, ...)` | String helpers. `concat` treats missing values as `''`. |
+| `coalesce(a, b, ...)` | First value that is not null or blank. |
+| `round(x, digits?)`, `floor(x)`, `ceil(x)`, `abs(x)`, `min(...)`, `max(...)` | Math. |
+| `contains(haystack, needle)` | Case-insensitive substring test, or membership for a list. |
+| `lookup(table, key, default?)` | Value from a `lookups:` table. |
+
+#### `lookups`
+
+Top-level map of named tables for `lookup()`. Each entry is an inline map or a path, relative to the sources directory (it may not point outside it), to a `.json` object or a `.csv` file with a header row. For CSV the first column is the key. With exactly two columns the second column is the value; with more, the value is the whole row, so `lookup('t', k).label` works. A missing or unreadable file skips the source with an error.
+
+```yaml
+lookups:
+  countries: { US: United States, FR: France }
+  aircraft_types: lookups/aircraft_types.csv
+```
 
 ### Recording modes
 
@@ -307,6 +393,20 @@ Keys that contain dots cannot be addressed. There are no functions, conditionals
 | :-- | :-- | :-- | :-- |
 | `append` (default) | One per distinct instant, capped at the newest 200 per entity (`MAX_OBS_PER_ENTITY`). | `obs_<entity id>_<epoch_ms>` when the source provides a timestamp; otherwise `obs_<entity id>_<lat>_<lon>` with 4-decimal coordinates. | Moving tracks: aircraft, ships, the ISS. |
 | `upsert` | Exactly one per entity, overwritten on every poll. | `obs_<entity id>` | Current-state or reference data: earthquakes, sensors, facilities. |
+| `dedupe` | One per distinct content, capped like `append`. A record whose hash is already stored is skipped entirely (the entity is not touched or re-broadcast). New content at an instant already stored replaces that row. | `obs_<entity id>_<sha256>` | News, alerts, bulletins: anything re-served unchanged on every poll. |
+
+`dedupe` identity: the sha256 of the values of `recording.dedupe_fields` (paths or `=expr`, read from the raw record), or, without that list, of the whole mapped entity (id, name, category, position, metadata, and the timestamp when the source provides one).
+
+`recording.max_age` (a duration such as `30m` or `7d`) applies to every mode: records whose source timestamp is older than now minus `max_age` are dropped and counted as `stale`. Records without a source timestamp are never stale.
+
+```yaml
+recording:
+  mode: dedupe
+  dedupe_fields: [guid, title]
+  max_age: 7d
+```
+
+The scheduler keeps per-source counters for the last poll in `IngestionScheduler.lastStats`: `written`, `skipped`, `filtered`, `unlocated`, `duplicates` and `stale`.
 
 `<entity id>` is the prefixed `<name>:<external_id>`, for example `obs_iss_position:25544_1786644444000`.
 

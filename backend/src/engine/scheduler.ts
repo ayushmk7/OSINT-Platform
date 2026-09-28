@@ -1,5 +1,12 @@
 import Database from 'better-sqlite3';
-import { EntityRecord, mapRecord, passesFilter } from './field-mapper';
+import {
+  EntityRecord,
+  expressionContext,
+  isUnlocated,
+  mapRecord,
+  passesFilter
+} from './field-mapper';
+import { isOrbitalFormat, propagateRecords } from './orbit';
 import { parsePayload } from './parsers';
 import { SourceConfig, loadSourcesFromDir, parseDurationSeconds } from './yaml-loader';
 import { isStreamTransport } from './transport-config';
@@ -8,6 +15,21 @@ import { StreamHandle, fetchHttpRecords, startStream } from './transports';
 /** Retention cap for `append` sources: newest N observations kept per entity. */
 export const MAX_OBS_PER_ENTITY = 200;
 
+/** Per-poll counters, kept per source in `IngestionScheduler.lastStats`. */
+export interface PollStats {
+  written: number;
+  /** No identity or no coordinates (and `observation.optional` not set). */
+  skipped: number;
+  /** Excluded by `filter:` rules. */
+  filtered: number;
+  /** No coordinates with `observation.optional: true` (dropped silently). */
+  unlocated: number;
+  /** dedupe mode: content hash already stored. */
+  duplicates: number;
+  /** Older than `recording.max_age`. */
+  stale: number;
+}
+
 export class IngestionScheduler {
   private db: Database.Database;
   private sourcesDir: string;
@@ -15,6 +37,10 @@ export class IngestionScheduler {
   private streams: StreamHandle[] = [];
   private configs: SourceConfig[] = [];
   private lastPositions = new Map<string, string>();
+  /** Last fetched orbital element sets per source, re-propagated by the fast tick. */
+  private orbitalElements = new Map<string, unknown[]>();
+  /** Counters from the most recent poll of each source. */
+  public lastStats = new Map<string, PollStats>();
 
   // Optional hook: called ONLY when an entity is new or its position changed.
   // Step 3 sets this to broadcaster.broadcastEntityUpdate so the WS stream is not a
@@ -80,7 +106,8 @@ export class IngestionScheduler {
       content,
       config.parser.format,
       config.parser.records_path,
-      config.parser.max_records
+      config.parser.max_records,
+      config.parser
     );
   }
 
@@ -89,14 +116,36 @@ export class IngestionScheduler {
    * A failure is logged with the source name and swallowed only at this boundary so the
    * scheduler keeps running; it is never silently dropped.
    */
-  public async pollSource(config: SourceConfig): Promise<number> {
+  /**
+   * Re-propagate the cached orbital elements of a `tle`/`omm_json` source to "now" and persist
+   * the positions, WITHOUT refetching. Returns 0 when nothing has been fetched yet.
+   */
+  public repropagate(config: SourceConfig): Promise<number> {
+    return this.pollSource(config, { reuseElements: true });
+  }
+
+  public async pollSource(
+    config: SourceConfig,
+    options: { reuseElements?: boolean } = {}
+  ): Promise<number> {
     try {
-      let rawRecords = await fetchHttpRecords(config.transport, (content) =>
-        this.parseContent(config, content)
-      );
+      const orbital = isOrbitalFormat(config.parser.format);
+      const cached = options.reuseElements ? this.orbitalElements.get(config.name) : undefined;
+      if (options.reuseElements && !cached) return 0;
+
+      let rawRecords =
+        cached ??
+        (await fetchHttpRecords(config.transport, (content) => this.parseContent(config, content)));
       // With pagination each page is capped by max_records; cap the concatenation too.
       const max = config.parser.max_records;
-      if (max && max > 0 && rawRecords.length > max) rawRecords = rawRecords.slice(0, max);
+      if (!cached && max && max > 0 && rawRecords.length > max)
+        rawRecords = rawRecords.slice(0, max);
+      if (orbital) {
+        // Element sets are cached so the propagate_interval tick can move satellites
+        // between fetches; every poll/tick emits positions computed for "now".
+        if (!cached) this.orbitalElements.set(config.name, rawRecords);
+        rawRecords = propagateRecords(rawRecords, new Date());
+      }
       return this.ingestRecords(config, rawRecords);
     } catch (err) {
       console.error(`Error polling source ${config.name}:`, err);
@@ -156,9 +205,32 @@ export class IngestionScheduler {
           )
       `);
 
+      // dedupe: a content hash already stored means "seen" -> skip before touching the entity.
+      const obsExistsStmt = this.db.prepare('SELECT 1 FROM observations WHERE id = ?');
+      // dedupe: new content for an (entity, instant) that already has a row replaces that row
+      // (including its id, i.e. the hash) instead of being dropped by the natural-key index.
+      const dedupeObsStmt = this.db.prepare(`
+        INSERT INTO observations
+          (id, entity_id, source_id, latitude, longitude, altitude, speed, heading, timestamp, raw_payload)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(entity_id, timestamp) DO UPDATE SET
+          id = excluded.id, latitude = excluded.latitude, longitude = excluded.longitude,
+          altitude = excluded.altitude, speed = excluded.speed, heading = excluded.heading,
+          raw_payload = excluded.raw_payload
+      `);
+      const exprCtx = expressionContext(config);
+      const maxAgeSec =
+        config.recording?.max_age !== undefined
+          ? parseDurationSeconds(config.recording.max_age, 0)
+          : 0;
+      const oldestMs = maxAgeSec > 0 ? Date.now() - maxAgeSec * 1000 : -Infinity;
+
       let written = 0;
       let skipped = 0;
       let filtered = 0;
+      let unlocated = 0;
+      let duplicates = 0;
+      let stale = 0;
       const touchedEntities = new Set<string>();
       const changedEntities: EntityRecord[] = []; // new or moved -> broadcast after commit
 
@@ -167,17 +239,28 @@ export class IngestionScheduler {
           // Source-declared predicates run BEFORE mapping: a deliberately excluded record
           // (e.g. a heliport in an airports feed) is not a malformed one, so it is counted
           // separately and never inflates the "missing id/coordinates" warning.
-          if (!passesFilter(raw, config.filter)) {
+          if (!passesFilter(raw, config.filter, exprCtx)) {
             filtered++;
             continue;
           }
 
           const mapped = mapRecord(raw, config, config.name);
           if (!mapped) {
-            skipped++; // no identity or no valid coordinates — never plotted at (0,0)
+            // observation.optional: non-geo records (e.g. most RSS items) are expected.
+            if (config.observation.optional && isUnlocated(raw, config)) unlocated++;
+            else skipped++; // no identity or no valid coordinates — never plotted at (0,0)
             continue;
           }
           const { entity, observation } = mapped;
+
+          if (Date.parse(observation.timestamp) < oldestMs) {
+            stale++; // older than recording.max_age
+            continue;
+          }
+          if (mode === 'dedupe' && obsExistsStmt.get(observation.id)) {
+            duplicates++;
+            continue;
+          }
 
           upsertEntityStmt.run(
             entity.id,
@@ -191,7 +274,8 @@ export class IngestionScheduler {
             JSON.stringify(entity.metadata)
           );
 
-          const obsStmt = mode === 'upsert' ? upsertObsStmt : appendObsStmt;
+          const obsStmt =
+            mode === 'upsert' ? upsertObsStmt : mode === 'dedupe' ? dedupeObsStmt : appendObsStmt;
           obsStmt.run(
             observation.id,
             observation.entity_id,
@@ -216,7 +300,7 @@ export class IngestionScheduler {
           written++;
         }
 
-        if (mode === 'append') {
+        if (mode === 'append' || mode === 'dedupe') {
           for (const entityId of touchedEntities) {
             pruneStmt.run(entityId, entityId, MAX_OBS_PER_ENTITY);
           }
@@ -240,6 +324,14 @@ export class IngestionScheduler {
       if (filtered > 0) {
         console.log(`Source ${config.name}: ${filtered} record(s) excluded by filter rules`);
       }
+      this.lastStats.set(config.name, {
+        written,
+        skipped,
+        filtered,
+        unlocated,
+        duplicates,
+        stale
+      });
       return written;
     }
   }
@@ -271,6 +363,18 @@ export class IngestionScheduler {
       }, intervalSec * 1000);
 
       this.timers.push(timer);
+
+      // Orbital sources: move satellites between fetches by re-propagating cached elements.
+      if (isOrbitalFormat(config.parser.format) && config.transport.propagate_interval) {
+        const tickSec = parseDurationSeconds(config.transport.propagate_interval, 0);
+        if (tickSec > 0) {
+          this.timers.push(
+            setInterval(() => {
+              void this.repropagate(config);
+            }, tickSec * 1000)
+          );
+        }
+      }
     }
   }
 
