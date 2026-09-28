@@ -60,3 +60,5 @@ lerna-debug.log*
 
 # AI
 .superpowers/
+# Claude Code local state (worktrees, settings)
+.claude/
