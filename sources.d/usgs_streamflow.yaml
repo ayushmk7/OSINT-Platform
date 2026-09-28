@@ -1,0 +1,77 @@
+schema_version: 1
+name: usgs_streamflow
+source_type: usgs_waterdata
+layer_type: streamflow
+display_name: 'USGS Streamflow (latest)'
+enabled: true
+
+layer:
+  id: streamflow
+  name: River discharge
+  group: Environment
+  description: USGS Water Data latest instantaneous discharge at stream gauges (first 2000)
+
+display:
+  icon: flood
+  color: '#0096c7'
+  # Discharge, cubic feet per second (log-like stops).
+  color_by:
+    field: metadata.discharge_cfs
+    stops:
+      [[0, '#caf0f8'], [100, '#90e0ef'], [1000, '#00b4d8'], [10000, '#0077b6'], [100000, '#03045e']]
+  size: 0.6
+  ttl: '6h'
+  fields:
+    - {
+        path: metadata.discharge_cfs,
+        label: Discharge,
+        format: number,
+        precision: 0,
+        suffix: ' ft³/s'
+      }
+    - { path: metadata.site, label: Site }
+    - { path: metadata.approval, label: Approval status }
+    - { path: timestamp, label: Measured, format: datetime }
+    - { path: metadata.url, label: Site page, format: link }
+
+transport:
+  type: http_poll
+  # USGS Water Data OGC API: https://api.waterdata.usgs.gov/ogcapi/v1/ (latest-continuous, 00060 = discharge).
+  # Keyless requests are rate-limited; an api.data.gov key can be sent as X-Api-Key if needed.
+  url: 'https://api.waterdata.usgs.gov/ogcapi/v1/collections/latest-continuous/items?f=json&parameter_code=00060&limit=2000&properties=monitoring_location_id,time,value,unit_of_measure,approval_status'
+  headers:
+    Accept: 'application/geo+json'
+  timeout: '60s'
+  interval: '30m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '10s'
+    max_delay: '60s'
+
+parser:
+  format: geojson
+  max_records: 2000
+
+filter:
+  - expr: 'number(properties.value) != null'
+  - expr: 'geometry != null'
+  # latest-continuous also returns the last value of long-retired gauges; keep the past 2 days.
+  - expr: 'unix_ms(properties.time) > now() - 172800000'
+
+entity:
+  external_id: 'properties.monitoring_location_id'
+  name: 'properties.monitoring_location_id'
+  metadata:
+    discharge_cfs: '=number(properties.value)'
+    site: 'properties.monitoring_location_id'
+    approval: 'properties.approval_status'
+    url: "=concat('https://waterdata.usgs.gov/monitoring-location/', properties.monitoring_location_id)"
+
+observation:
+  latitude: 'geometry.coordinates[1]'
+  longitude: 'geometry.coordinates[0]'
+  timestamp: 'properties.time'
+
+recording:
+  mode: upsert

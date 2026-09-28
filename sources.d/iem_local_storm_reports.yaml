@@ -1,0 +1,74 @@
+schema_version: 1
+name: iem_local_storm_reports
+source_type: iem_lsr
+layer_type: storm_reports
+display_name: 'NWS Local Storm Reports (IEM)'
+enabled: true
+
+layer:
+  id: storm_reports
+  name: Local storm reports
+  group: Weather
+  description: NWS local storm reports (tornado, hail, wind, flood...), past 24 h, via Iowa Environmental Mesonet
+
+display:
+  icon: lightning
+  color: '#f15bb5'
+  color_by:
+    field: metadata.type
+    map:
+      TORNADO: '#9d0208'
+      HAIL: '#00bbf9'
+      TSTM WND DMG: '#f15bb5'
+      TSTM WND GST: '#fee440'
+      FLASH FLOOD: '#0077b6'
+      FLOOD: '#48cae4'
+      COASTAL FLOOD: '#90e0ef'
+      HEAVY RAIN: '#4361ee'
+      SNOW: '#e0fbfc'
+  size: 0.8
+  ttl: '24h'
+  fields:
+    - { path: metadata.type, label: Report type }
+    - { path: metadata.magnitude, label: Magnitude }
+    - { path: metadata.remark, label: Remark }
+    - { path: metadata.source, label: Source }
+    - { path: metadata.wfo, label: NWS office }
+    - { path: timestamp, label: Event time, format: datetime }
+
+transport:
+  type: http_poll
+  # https://mesonet.agron.iastate.edu/geojson/ (lsr.php)
+  url: 'https://mesonet.agron.iastate.edu/geojson/lsr.php?hours=24'
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '10m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: geojson
+  max_records: 2000
+
+entity:
+  # The feature id is a per-response row number; build a stable one from the report itself.
+  external_id: "=concat(properties.product_id, ':', properties.valid, ':', properties.lat, ',', properties.lon, ':', properties.type)"
+  name: "=concat(properties.typetext, ' - ', properties.city, ', ', properties.st)"
+  metadata:
+    type: 'properties.typetext'
+    magnitude: "=properties.magnitude != '' ? concat(properties.magnitude, ' ', properties.unit ?? '') : null"
+    remark: 'properties.remark'
+    source: 'properties.source'
+    wfo: 'properties.wfo'
+
+observation:
+  latitude: 'properties.lat'
+  longitude: 'properties.lon'
+  timestamp: 'properties.valid'
+
+recording:
+  mode: upsert

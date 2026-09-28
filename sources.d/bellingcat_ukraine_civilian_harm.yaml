@@ -1,0 +1,79 @@
+# Bellingcat's Ukraine civilian harm incidents: open-source-verified events (strikes and
+# shelling) that harmed civilians or civilian infrastructure since February 2022.
+# Source: the JSON behind https://ukraine.bellingcat.com/ (keyless). The dataset has not had
+# new events since mid-2025, so it is polled daily and never expires.
+schema_version: 1
+name: bellingcat_ukraine_civilian_harm
+source_type: bellingcat_timemap
+layer_type: ukraine_civilian_harm
+display_name: 'Ukraine civilian harm (Bellingcat)'
+enabled: true
+
+layer:
+  id: ukraine_civilian_harm
+  name: Ukraine civilian harm
+  group: Conflict
+  description: Bellingcat-verified civilian harm incidents, coloured by primary impact
+
+display:
+  icon: explosion
+  color: '#ff5252'
+  color_by:
+    field: metadata.primary_impact
+    map:
+      Residential: '#ff5252'
+      Commercial: '#ffab40'
+      School or childcare: '#e040fb'
+      Healthcare: '#ff4081'
+      Roads/Highways/Transport: '#ffd740'
+      Industrial: '#8d6e63'
+      Administrative: '#7c4dff'
+      Cultural: '#18ffff'
+      Religious: '#b2ff59'
+    default: '#bdbdbd'
+  size: 0.7
+  fields:
+    - { path: metadata.date, label: Date }
+    - { path: metadata.description, label: Description }
+    - { path: metadata.impact, label: Impact }
+    - { path: metadata.weapon_system, label: Weapon system }
+    - { path: metadata.first_source, label: Source, format: link }
+
+transport:
+  type: http_poll
+  url: 'https://bellingcat-embeds.ams3.cdn.digitaloceanspaces.com/production/ukr/timemap/api.json'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '60s'
+  interval: '24h'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '10s'
+    max_delay: '2m'
+
+parser:
+  format: json
+  max_records: 3000
+
+entity:
+  external_id: 'id'
+  name: '=concat(location, " (", date, ")")'
+  metadata:
+    date: 'date'
+    location: 'location'
+    description: 'description'
+    primary_impact: 'impact[0]'
+    impact: 'impact'
+    weapon_system: 'weapon_system'
+    first_source: 'sources[0]'
+    graphic: 'graphic'
+
+observation:
+  latitude: 'latitude'
+  longitude: 'longitude'
+  timestamp: 'date'
+
+recording:
+  mode: upsert

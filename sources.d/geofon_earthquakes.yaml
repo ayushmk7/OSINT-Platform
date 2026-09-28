@@ -1,0 +1,85 @@
+schema_version: 1
+name: geofon_earthquakes
+source_type: fdsn_event
+layer_type: earthquakes_geofon
+display_name: 'GEOFON Earthquakes (GFZ)'
+enabled: true
+
+layer:
+  id: earthquakes_geofon
+  name: GEOFON earthquakes
+  group: Hazards
+  description: GFZ Potsdam GEOFON, latest 300 events
+
+display:
+  icon: quake
+  color: '#b5179e'
+  color_by:
+    field: metadata.magnitude
+    stops: [[3, '#e0aaff'], [5, '#b5179e'], [7, '#7209b7']]
+  size: 1.0
+  ttl: '7d'
+  fields:
+    - { path: metadata.magnitude, label: Magnitude, format: number, precision: 1 }
+    - { path: metadata.mag_type, label: Magnitude type }
+    - { path: metadata.depth, label: Depth, format: number, precision: 1, suffix: ' km' }
+    - { path: metadata.event_type, label: Event type }
+    - { path: timestamp, label: Origin time, format: datetime }
+    - { path: metadata.url, label: Event page, format: link }
+
+transport:
+  type: http_poll
+  # FDSN event web service, pipe-separated text output: https://geofon.gfz.de/fdsnws/event/1/
+  url: 'https://geofon.gfz.de/fdsnws/event/1/query?format=text&orderby=time&limit=300'
+  timeout: '20s'
+  interval: '10m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '2s'
+    max_delay: '30s'
+
+parser:
+  format: csv
+  max_records: 300
+  csv:
+    delimiter: '|'
+    # The header row starts with "#EventID"; name the columns explicitly.
+    columns:
+      [
+        event_id,
+        time,
+        lat,
+        lon,
+        depth_km,
+        author,
+        catalog,
+        contributor,
+        contributor_id,
+        mag_type,
+        mag,
+        mag_author,
+        location,
+        event_type
+      ]
+
+entity:
+  external_id: 'event_id'
+  name: 'location'
+  metadata:
+    magnitude: '=number(mag)'
+    mag_type: 'mag_type'
+    depth: '=number(depth_km)'
+    event_type: 'event_type'
+    url: "=concat('https://geofon.gfz.de/eqinfo/event.php?id=', event_id)"
+
+observation:
+  latitude: 'lat'
+  longitude: 'lon'
+  altitude: 'depth_km'
+  timestamp: "=concat(time, 'Z')" # UTC without a zone designator
+  scale:
+    altitude: -1000
+
+recording:
+  mode: upsert

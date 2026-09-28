@@ -1,0 +1,88 @@
+# Major dams: every dam (and subclass) whose height, normalised to metres, is >= 100 m.
+# Source: Wikidata Query Service (https://query.wikidata.org/, CC0). The query is POSTed as a
+# form so it stays readable here. WDQS asks clients for a descriptive User-Agent with contact
+# details: set MKOSINT_CONTACT to a URL or e-mail address (optional; a generic value is used
+# otherwise). Items are ordered by sitelink count so the most notable ones survive the LIMIT.
+schema_version: 1
+name: wikidata_major_dams
+source_type: wikidata_sparql
+layer_type: major_dams
+display_name: 'Major dams (100 m+)'
+enabled: true
+
+layer:
+  id: major_dams
+  name: Major dams (100 m+)
+  group: Infrastructure
+  description: 'Wikidata: dams with a recorded height of at least 100 m'
+
+display:
+  icon: flood
+  color: '#29b6f6'
+  color_by:
+    field: metadata.height_m
+    stops: [[100, '#81d4fa'], [150, '#29b6f6'], [200, '#0277bd'], [250, '#1a237e']]
+  size: 0.9
+  # Reference data refreshed daily: no ttl.
+  fields:
+    - { path: metadata.height_m, label: Height, format: number, precision: 0, suffix: ' m' }
+    - { path: metadata.operator, label: Operator }
+    - { path: metadata.country, label: Country }
+    - { path: metadata.kind, label: Type }
+    - { path: metadata.wikidata_url, label: Wikidata, format: link }
+
+transport:
+  type: http_poll
+  url: 'https://query.wikidata.org/sparql'
+  method: POST
+  content_type: application/x-www-form-urlencoded
+  headers:
+    Accept: 'application/sparql-results+json'
+    User-Agent: 'MK-OSINT/1.0 (${MKOSINT_CONTACT:-https://github.com/}) wikidata-layers'
+  body:
+    query: |
+      SELECT ?item (SAMPLE(?l) AS ?label) (SAMPLE(?la) AS ?lat) (SAMPLE(?lo) AS ?lon) (SAMPLE(?cl) AS ?country) (SAMPLE(?kl) AS ?kind) (MAX(?sl) AS ?sitelinks) (MAX(?h) AS ?height_m) (SAMPLE(?opl) AS ?operator)
+      WHERE {
+        { ?item wdt:P31 ?k . ?k wdt:P279* wd:Q12323 } .
+        ?item p:P625/psv:P625 [ wikibase:geoLatitude ?la ; wikibase:geoLongitude ?lo ; wikibase:geoGlobe wd:Q2 ] .
+        ?item wikibase:sitelinks ?sl .
+        FILTER NOT EXISTS { ?item wdt:P576 [] } FILTER NOT EXISTS { ?item wdt:P3999 [] }
+        OPTIONAL { ?item rdfs:label ?l FILTER(lang(?l) = "en") }
+        OPTIONAL { ?k rdfs:label ?kl FILTER(lang(?kl) = "en") }
+        OPTIONAL { ?item wdt:P17 ?c . ?c rdfs:label ?cl FILTER(lang(?cl) = "en") }
+        ?item p:P2048/psn:P2048/wikibase:quantityAmount ?h . FILTER(?h >= 100)
+        OPTIONAL { ?item wdt:P137 ?op . ?op rdfs:label ?opl FILTER(lang(?opl) = "en") }
+      }
+      GROUP BY ?item
+      ORDER BY DESC(?sitelinks)
+      LIMIT 3000
+  timeout: '90s'
+  interval: '24h'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '30s'
+    max_delay: '5m'
+
+parser:
+  format: json
+  records_path: 'results.bindings'
+  max_records: 3000
+
+entity:
+  external_id: 'item.value'
+  name: '=coalesce(label.value, kind.value, item.value)'
+  metadata:
+    country: 'country.value'
+    kind: 'kind.value'
+    height_m: '=number(height_m.value)'
+    operator: 'operator.value'
+    wikidata_url: 'item.value'
+    sitelinks: '=number(sitelinks.value)'
+
+observation:
+  latitude: '=number(lat.value)'
+  longitude: '=number(lon.value)'
+
+recording:
+  mode: upsert

@@ -1,0 +1,55 @@
+schema_version: 1
+name: awc_cwas
+source_type: aviationweather
+layer_type: aviation
+display_name: 'Center Weather Advisories (AWC)'
+enabled: true
+
+layer:
+  id: center_weather_advisories
+  name: Center Weather Advisories
+  group: Aviation
+  description: Short-term ARTCC weather advisories (US), aviationweather.gov
+
+display:
+  icon: storm
+  color: '#8d6e63'
+  ttl: '20m'
+  fields:
+    - { path: metadata.center, label: ARTCC }
+    - { path: metadata.hazard, label: Hazard }
+    - { path: metadata.qualifier, label: Qualifier }
+    - { path: metadata.valid_from, label: Valid from, format: datetime }
+    - { path: metadata.valid_to, label: Valid to, format: datetime }
+    - { path: metadata.raw, label: Raw text }
+
+transport:
+  type: http_poll
+  url: 'https://aviationweather.gov/api/data/cwa?format=json'
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '5m'
+  retry: { max_attempts: 3, backoff: exponential, initial_delay: '2s', max_delay: '15s' }
+
+parser:
+  format: json
+  max_records: 500
+
+entity:
+  external_id: '=concat(cwsu, "-", seriesId, "-", validTimeFrom)'
+  name: '=concat(name, " CWA ", seriesId, " ", hazard)'
+  metadata:
+    center: 'name'
+    hazard: 'hazard'
+    qualifier: 'qualifier'
+    valid_from: 'validTimeFrom'
+    valid_to: 'validTimeTo'
+    raw: 'rawText'
+
+observation:
+  latitude: '=(min(coords[0].lat, coords[floor(coords.length / 4)].lat, coords[floor(coords.length / 2)].lat, coords[floor(coords.length * 3 / 4)].lat) + max(coords[0].lat, coords[floor(coords.length / 4)].lat, coords[floor(coords.length / 2)].lat, coords[floor(coords.length * 3 / 4)].lat)) / 2'
+  longitude: '=(min(coords[0].lon, coords[floor(coords.length / 4)].lon, coords[floor(coords.length / 2)].lon, coords[floor(coords.length * 3 / 4)].lon) + max(coords[0].lon, coords[floor(coords.length / 4)].lon, coords[floor(coords.length / 2)].lon, coords[floor(coords.length * 3 / 4)].lon)) / 2'
+
+recording:
+  mode: upsert

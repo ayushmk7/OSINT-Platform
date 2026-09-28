@@ -1,0 +1,62 @@
+schema_version: 1
+name: noaa_tide_stations
+source_type: noaa_coops
+layer_type: maritime
+display_name: 'NOAA water level stations'
+enabled: true
+
+layer:
+  id: tide_stations
+  name: Tide / water level stations
+  group: Maritime
+  description: NOAA CO-OPS National Water Level Observation Network stations (US)
+
+display:
+  icon: buoy
+  color: '#40c4ff'
+  color_by:
+    field: metadata.great_lakes
+    map: { 'true': '#b388ff', 'false': '#40c4ff' }
+  size: 0.7
+  fields:
+    - { path: metadata.station_id, label: Station ID }
+    - { path: metadata.state, label: State }
+    - { path: metadata.tide_type, label: Tide type }
+    - { path: metadata.affiliations, label: Network }
+    - { path: metadata.storm_surge, label: Storm surge station, format: bool }
+    - { path: metadata.url, label: Station page, format: link }
+
+transport:
+  type: http_poll
+  url: 'https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=waterlevels'
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '7d'
+  retry: { max_attempts: 3, backoff: exponential, initial_delay: '5s', max_delay: '60s' }
+
+parser:
+  format: json
+  records_path: 'stations'
+  max_records: 2000
+
+entity:
+  external_id: 'id'
+  name: '=concat(name, ", ", state)'
+  metadata:
+    station_id: 'id'
+    state: 'state'
+    tide_type: 'tideType'
+    affiliations: 'affiliations'
+    great_lakes: 'greatlakes'
+    storm_surge: 'stormsurge'
+  derived:
+    url:
+      template: 'https://tidesandcurrents.noaa.gov/stationhome.html?id={id}'
+
+observation:
+  latitude: 'lat'
+  longitude: 'lng'
+
+recording:
+  mode: upsert

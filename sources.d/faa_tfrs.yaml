@@ -1,0 +1,63 @@
+schema_version: 1
+name: faa_tfrs
+source_type: faa_tfr
+layer_type: aviation
+display_name: 'FAA Temporary Flight Restrictions'
+enabled: true
+
+layer:
+  id: tfrs
+  name: Flight restrictions (TFR)
+  group: Aviation
+  description: Active and scheduled US TFRs (VIP, security, hazards, space ops), tfr.faa.gov
+
+display:
+  icon: shield
+  color: '#ff1744'
+  color_by:
+    field: metadata.legal
+    map: { SECURITY: '#ff1744', HAZARDS: '#ff9100', 'SPACE OPERATIONS': '#e040fb', VIP: '#ff4081' }
+  size: 1.1
+  ttl: '2h'
+  fields:
+    - { path: metadata.notam, label: NOTAM }
+    - { path: metadata.legal, label: Type }
+    - { path: metadata.state, label: State }
+    - { path: metadata.facility, label: ARTCC }
+    - { path: metadata.modified, label: Last modified }
+    - { path: metadata.url, label: Details, format: link }
+
+transport:
+  type: http_poll
+  # The WFS layer behind tfr.faa.gov's map; polygons in WGS84.
+  url: 'https://tfr.faa.gov/geoserver/TFR/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=TFR:V_TFR_LOC&maxFeatures=1000&outputFormat=application/json&srsname=EPSG:4326'
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '15m'
+  retry: { max_attempts: 3, backoff: exponential, initial_delay: '2s', max_delay: '15s' }
+
+parser:
+  format: geojson
+  max_records: 2000
+
+entity:
+  external_id: 'properties.NOTAM_KEY'
+  name: 'properties.TITLE'
+  metadata:
+    notam: '=concat(properties.NOTAM_KEY)'
+    legal: 'properties.LEGAL'
+    state: 'properties.STATE'
+    facility: 'properties.CNS_LOCATION_ID'
+    modified: 'properties.LAST_MODIFICATION_DATETIME'
+  derived:
+    url:
+      template: 'https://tfr.faa.gov/tfr3/?page=detail_{properties.NOTAM_KEY}'
+
+# Plotted at the centre of the bounding box of four evenly spaced outer-ring vertices.
+observation:
+  latitude: '=(min(geometry.coordinates[0][0][1], geometry.coordinates[0][floor(geometry.coordinates[0].length / 4)][1], geometry.coordinates[0][floor(geometry.coordinates[0].length / 2)][1], geometry.coordinates[0][floor(geometry.coordinates[0].length * 3 / 4)][1]) + max(geometry.coordinates[0][0][1], geometry.coordinates[0][floor(geometry.coordinates[0].length / 4)][1], geometry.coordinates[0][floor(geometry.coordinates[0].length / 2)][1], geometry.coordinates[0][floor(geometry.coordinates[0].length * 3 / 4)][1])) / 2'
+  longitude: '=(min(geometry.coordinates[0][0][0], geometry.coordinates[0][floor(geometry.coordinates[0].length / 4)][0], geometry.coordinates[0][floor(geometry.coordinates[0].length / 2)][0], geometry.coordinates[0][floor(geometry.coordinates[0].length * 3 / 4)][0]) + max(geometry.coordinates[0][0][0], geometry.coordinates[0][floor(geometry.coordinates[0].length / 4)][0], geometry.coordinates[0][floor(geometry.coordinates[0].length / 2)][0], geometry.coordinates[0][floor(geometry.coordinates[0].length * 3 / 4)][0])) / 2'
+
+recording:
+  mode: upsert

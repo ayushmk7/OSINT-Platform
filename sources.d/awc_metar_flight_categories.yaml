@@ -1,0 +1,69 @@
+schema_version: 1
+name: awc_metar_flight_categories
+source_type: aviationweather
+layer_type: aviation
+display_name: 'Airport flight categories (METAR)'
+enabled: true
+
+layer:
+  id: metar_flight_category
+  name: Airport conditions (METAR)
+  group: Aviation
+  description: Latest METAR per station coloured VFR / MVFR / IFR / LIFR, aviationweather.gov
+
+display:
+  icon: airport
+  color: '#78909c'
+  color_by:
+    field: metadata.flight_category
+    map: { VFR: '#4caf50', MVFR: '#2196f3', IFR: '#f44336', LIFR: '#e040fb' }
+  size: 0.6
+  ttl: '3h'
+  fields:
+    - { path: metadata.station, label: Station }
+    - { path: metadata.flight_category, label: Flight category }
+    - { path: metadata.wind, label: Wind }
+    - { path: metadata.visibility_sm, label: Visibility, suffix: ' SM' }
+    - { path: metadata.ceiling, label: Lowest layer }
+    - { path: metadata.weather, label: Weather }
+    - { path: metadata.temp_c, label: Temperature, format: number, precision: 1, suffix: ' °C' }
+    - { path: metadata.raw, label: METAR }
+    - { path: timestamp, label: Observed, format: datetime }
+
+transport:
+  type: http_poll
+  # AWC bulk cache, refreshed every minute; ~5,000 stations, ~1 MB. Polled politely.
+  url: 'https://aviationweather.gov/data/cache/metars.cache.csv'
+  timeout: '30s'
+  interval: '10m'
+  retry: { max_attempts: 3, backoff: exponential, initial_delay: '2s', max_delay: '15s' }
+
+parser:
+  format: csv
+  max_records: 10000
+
+filter:
+  - field: station_id
+    not_empty: true
+
+entity:
+  external_id: 'station_id'
+  name: 'station_id'
+  metadata:
+    station: 'station_id'
+    flight_category: 'flight_category'
+    wind: '=wind_speed_kt == null ? null : concat(wind_dir_degrees, "° / ", wind_speed_kt, " kt", wind_gust_kt ? concat(" G", wind_gust_kt) : "")'
+    visibility_sm: 'visibility_statute_mi'
+    ceiling: '=sky_cover ? concat(sky_cover, " ", cloud_base_ft_agl, " ft") : null'
+    weather: 'wx_string'
+    temp_c: 'temp_c'
+    raw: 'raw_text'
+
+observation:
+  latitude: 'latitude'
+  longitude: 'longitude'
+  altitude: 'elevation_m'
+  timestamp: 'observation_time'
+
+recording:
+  mode: upsert

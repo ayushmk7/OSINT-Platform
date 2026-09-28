@@ -1,0 +1,103 @@
+schema_version: 1
+name: opensky_states
+source_type: opensky
+layer_type: aviation
+display_name: 'OpenSky global air traffic'
+enabled: true
+
+layer:
+  id: aircraft_opensky
+  name: Air traffic (OpenSky)
+  group: Aviation
+  description: Global airborne state vectors, OpenSky Network (15 min)
+
+display:
+  icon: plane
+  color: '#90caf9'
+  color_by:
+    field: altitude
+    stops: [[0, '#9e9e9e'], [3000, '#64b5f6'], [11000, '#e3f2fd']]
+  size: 0.7
+  rotate: true
+  trail: { enabled: true, max_points: 8 }
+  # Polled every 15 min; drop contacts missing from two consecutive polls.
+  ttl: '32m'
+  fields:
+    - { path: metadata.callsign, label: Callsign }
+    - { path: metadata.icao24, label: ICAO24 }
+    - { path: metadata.origin_country, label: Registration country }
+    - { path: metadata.squawk, label: Squawk }
+    - { path: altitude, label: Altitude, format: number, precision: 0, suffix: ' m' }
+    - { path: speed, label: Ground speed, format: number, precision: 0, suffix: ' m/s' }
+    - {
+        path: metadata.vertical_rate,
+        label: Vertical rate,
+        format: number,
+        precision: 1,
+        suffix: ' m/s'
+      }
+    - { path: timestamp, label: Position time, format: datetime }
+
+transport:
+  type: http_poll
+  # Anonymous access: 400 API credits/day, a global /states/all request costs 4, and
+  # anonymous data is 10 s resolution. 15 min = 96 polls/day = 384 credits. Do not lower.
+  url: 'https://opensky-network.org/api/states/all'
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '15m'
+  retry: { max_attempts: 2, backoff: fixed, initial_delay: '30s', max_delay: '30s' }
+
+parser:
+  format: json
+  records_path: 'states'
+  max_records: 4000
+  # Each state vector is a positional array (OpenSky REST API docs, "State Vectors").
+  array_columns:
+    [
+      icao24,
+      callsign,
+      origin_country,
+      time_position,
+      last_contact,
+      longitude,
+      latitude,
+      baro_altitude,
+      on_ground,
+      velocity,
+      true_track,
+      vertical_rate,
+      sensors,
+      geo_altitude,
+      squawk,
+      spi,
+      position_source,
+      category
+    ]
+
+filter:
+  - expr: '!on_ground'
+  - field: latitude
+    not_empty: true
+
+entity:
+  external_id: 'icao24'
+  name: '=coalesce(trim(callsign), icao24)'
+  metadata:
+    icao24: 'icao24'
+    callsign: '=trim(callsign)'
+    origin_country: 'origin_country'
+    squawk: 'squawk'
+    vertical_rate: 'vertical_rate'
+
+observation:
+  latitude: 'latitude'
+  longitude: 'longitude'
+  altitude: '=baro_altitude ?? geo_altitude' # metres
+  speed: 'velocity' # m/s
+  heading: 'true_track'
+  timestamp: 'time_position' # epoch seconds
+
+recording:
+  mode: append

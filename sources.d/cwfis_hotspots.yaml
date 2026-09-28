@@ -1,0 +1,68 @@
+schema_version: 1
+name: cwfis_hotspots
+source_type: cwfis_wfs
+layer_type: fire_hotspots
+display_name: 'CWFIS Fire Hotspots (24 h)'
+enabled: true
+
+layer:
+  id: fire_hotspots
+  name: Satellite fire hotspots
+  group: Hazards
+  description: Canadian Wildland Fire Information System, North America, last 24 h
+
+display:
+  icon: fire
+  color: '#ff8500'
+  # Fire radiative power (MW).
+  color_by:
+    field: metadata.frp
+    stops: [[0, '#ffd000'], [20, '#ff8500'], [100, '#e5383b'], [500, '#a4161a']]
+  size: 0.6
+  ttl: '36h'
+  fields:
+    - { path: metadata.frp, label: Radiative power, format: number, precision: 1, suffix: ' MW' }
+    - { path: metadata.sensor, label: Sensor }
+    - { path: metadata.satellite, label: Satellite }
+    - { path: metadata.agency, label: Agency }
+    - { path: metadata.fwi, label: Fire weather index, format: number, precision: 1 }
+    - { path: metadata.fuel, label: Fuel type }
+    - { path: timestamp, label: Detected, format: datetime }
+
+transport:
+  type: http_poll
+  # GeoServer WFS: https://cwfis.cfs.nrcan.gc.ca/geoserver/public/ows (layer public:hotspots_last24hrs).
+  # Geometry is in EPSG:3978, so the lat/lon properties are used instead.
+  url: 'https://cwfis.cfs.nrcan.gc.ca/geoserver/public/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=public:hotspots_last24hrs&outputFormat=application/json&maxFeatures=2000'
+  headers:
+    Accept: 'application/json'
+  timeout: '60s'
+  interval: '30m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: geojson
+  max_records: 2000
+
+entity:
+  external_id: 'id'
+  name: "=concat(properties.sensor, ' hotspot (', properties.agency, ')')"
+  metadata:
+    frp: 'properties.frp'
+    sensor: 'properties.sensor'
+    satellite: 'properties.satellite'
+    agency: 'properties.agency'
+    fwi: 'properties.fwi'
+    fuel: 'properties.fuel'
+
+observation:
+  latitude: 'properties.lat'
+  longitude: 'properties.lon'
+  timestamp: 'properties.rep_date'
+
+recording:
+  mode: upsert

@@ -1,0 +1,80 @@
+schema_version: 1
+name: nws_alerts
+source_type: noaa_nws
+layer_type: weather_alerts
+display_name: 'NWS Active Weather Alerts'
+enabled: true
+
+layer:
+  id: weather_alerts
+  name: US weather warnings
+  group: Weather
+  description: NOAA NWS active alerts with a storm-based polygon (zone-only alerts omitted)
+
+display:
+  icon: alert
+  color: '#ffb703'
+  color_by:
+    field: metadata.severity
+    map:
+      {
+        Extreme: '#9d0208',
+        Severe: '#e5383b',
+        Moderate: '#ff9e00',
+        Minor: '#ffd60a',
+        Unknown: '#adb5bd'
+      }
+  size: 1.0
+  ttl: '12h'
+  fields:
+    - { path: metadata.event, label: Event }
+    - { path: metadata.severity, label: Severity }
+    - { path: metadata.urgency, label: Urgency }
+    - { path: metadata.certainty, label: Certainty }
+    - { path: metadata.area, label: Area }
+    - { path: metadata.expires, label: Expires, format: datetime }
+    - { path: metadata.sender, label: Issued by }
+    - { path: metadata.headline, label: Headline }
+
+transport:
+  type: http_poll
+  # https://www.weather.gov/documentation/services-web-api (alerts/active)
+  url: 'https://api.weather.gov/alerts/active?status=actual'
+  headers:
+    Accept: 'application/geo+json'
+  timeout: '30s'
+  interval: '5m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: geojson
+  max_records: 2000
+
+filter:
+  - expr: "geometry.type == 'Polygon'"
+
+entity:
+  external_id: 'properties.id'
+  name: "=concat(properties.event, ' - ', properties.senderName)"
+  metadata:
+    event: 'properties.event'
+    severity: 'properties.severity'
+    urgency: 'properties.urgency'
+    certainty: 'properties.certainty'
+    area: 'properties.areaDesc'
+    expires: 'properties.expires'
+    sender: 'properties.senderName'
+    headline: 'properties.headline'
+
+observation:
+  # Rough polygon centre: midpoint of the first and third ring vertices, else the first vertex.
+  latitude: '=((geometry.coordinates[0][0][1] + geometry.coordinates[0][2][1]) / 2) ?? geometry.coordinates[0][0][1]'
+  longitude: '=((geometry.coordinates[0][0][0] + geometry.coordinates[0][2][0]) / 2) ?? geometry.coordinates[0][0][0]'
+  timestamp: 'properties.sent'
+
+recording:
+  mode: upsert

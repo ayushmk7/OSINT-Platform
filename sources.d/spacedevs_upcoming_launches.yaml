@@ -1,0 +1,82 @@
+schema_version: 1
+name: spacedevs_upcoming_launches
+source_type: spacedevs
+layer_type: space
+display_name: 'Upcoming launches (The Space Devs)'
+enabled: true
+
+layer:
+  id: launches_upcoming
+  name: Upcoming launches
+  group: Space
+  description: Next 100 orbital launches worldwide at their pads, Launch Library 2
+
+display:
+  icon: rocket
+  color: '#ff9100'
+  color_by:
+    field: metadata.status
+    map:
+      {
+        Go: '#00e676',
+        TBC: '#ffd740',
+        TBD: '#9e9e9e',
+        Hold: '#ff5252',
+        'In Flight': '#40c4ff',
+        Deployed: '#b388ff',
+        Success: '#69f0ae',
+        Failure: '#ff1744'
+      }
+  size: 1.2
+  # Launches leave the "upcoming" list shortly after liftoff; prune after a few missed polls.
+  ttl: '3h'
+  fields:
+    - { path: metadata.net, label: NET (launch time), format: datetime }
+    - { path: metadata.status, label: Status }
+    - { path: metadata.provider, label: Provider }
+    - { path: metadata.rocket, label: Rocket }
+    - { path: metadata.mission, label: Mission }
+    - { path: metadata.mission_type, label: Mission type }
+    - { path: metadata.orbit, label: Orbit }
+    - { path: metadata.pad, label: Pad }
+    - { path: metadata.location, label: Site }
+    - { path: metadata.webcast_live, label: Webcast live, format: bool }
+    - { path: metadata.url, label: API record, format: link }
+
+transport:
+  type: http_poll
+  # Launch Library 2 anonymous tier: 15 requests/hour. One request per 30 min.
+  url: 'https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=100'
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '30m'
+  retry: { max_attempts: 2, backoff: fixed, initial_delay: '60s', max_delay: '60s' }
+
+parser:
+  format: json
+  records_path: 'results'
+  max_records: 100
+
+entity:
+  external_id: 'id'
+  name: 'name'
+  metadata:
+    net: 'net'
+    status: 'status.abbrev'
+    provider: 'launch_service_provider.name'
+    rocket: 'rocket.configuration.full_name'
+    mission: 'mission.name'
+    mission_type: 'mission.type'
+    orbit: 'mission.orbit.name'
+    pad: 'pad.name'
+    url: 'url'
+    location: 'pad.location.name'
+    webcast_live: 'webcast_live'
+
+observation:
+  latitude: 'pad.latitude'
+  longitude: 'pad.longitude'
+
+recording:
+  mode: upsert

@@ -1,0 +1,78 @@
+schema_version: 1
+name: gdacs_alerts
+source_type: gdacs
+layer_type: disaster_alerts
+display_name: 'GDACS Disaster Alerts'
+enabled: true
+
+layer:
+  id: disaster_alerts
+  name: Disaster alerts
+  group: Hazards
+  description: GDACS current events (quakes, cyclones, floods, fires, volcanoes, drought)
+
+display:
+  icon: alert
+  color: '#ff9f1c'
+  color_by:
+    field: metadata.alert_level
+    map: { Green: '#2dc653', Orange: '#ff9f1c', Red: '#e63946' }
+  size: 1.2
+  ttl: '14d'
+  fields:
+    - { path: metadata.event_type, label: Type }
+    - { path: metadata.alert_level, label: Alert level }
+    - { path: metadata.severity, label: Severity }
+    - { path: metadata.country, label: Country }
+    - { path: metadata.from_date, label: From, format: datetime }
+    - { path: metadata.to_date, label: To, format: datetime }
+    - { path: metadata.report_url, label: GDACS report, format: link }
+
+transport:
+  type: http_poll
+  # GDACS API: https://www.gdacs.org/gdacsapi/swagger/index.html (current events list)
+  url: 'https://www.gdacs.org/gdacsapi/api/events/geteventlist/EVENTS4APP'
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '15m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: geojson
+  max_records: 500
+
+entity:
+  external_id: "=concat(properties.eventtype, '-', properties.eventid)"
+  name: 'properties.name'
+  metadata:
+    event_type: "=lookup('types', properties.eventtype, properties.eventtype)"
+    alert_level: 'properties.alertlevel'
+    alert_score: 'properties.alertscore'
+    severity: 'properties.severitydata.severitytext'
+    country: 'properties.country'
+    from_date: "=concat(properties.fromdate, 'Z')"
+    to_date: "=concat(properties.todate, 'Z')"
+    report_url: 'properties.url.report'
+
+observation:
+  latitude: 'geometry.coordinates[1]'
+  longitude: 'geometry.coordinates[0]'
+  timestamp: "=concat(properties.datemodified, 'Z')"
+
+lookups:
+  types:
+    EQ: Earthquake
+    TC: Tropical cyclone
+    FL: Flood
+    VO: Volcano
+    DR: Drought
+    WF: Wildfire
+    TS: Tsunami
+
+recording:
+  mode: upsert

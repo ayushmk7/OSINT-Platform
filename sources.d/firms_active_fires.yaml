@@ -1,0 +1,70 @@
+schema_version: 1
+name: firms_active_fires
+source_type: nasa_firms
+layer_type: firms_fires
+display_name: 'NASA FIRMS Active Fires (VIIRS)'
+enabled: true
+
+layer:
+  id: firms_fires
+  name: FIRMS active fires
+  group: Hazards
+  description: NASA FIRMS VIIRS S-NPP near-real-time detections, worldwide, last 24 h (needs FIRMS_MAP_KEY)
+
+display:
+  icon: fire
+  color: '#ff5400'
+  color_by:
+    field: metadata.frp
+    stops: [[0, '#ffea00'], [10, '#ff9100'], [50, '#ff3d00'], [300, '#b71c1c']]
+  size: 0.5
+  ttl: '36h'
+  fields:
+    - { path: metadata.frp, label: Radiative power, format: number, precision: 1, suffix: ' MW' }
+    - { path: metadata.confidence, label: Confidence }
+    - {
+        path: metadata.brightness,
+        label: Brightness (I4),
+        format: number,
+        precision: 1,
+        suffix: ' K'
+      }
+    - { path: metadata.daynight, label: Day/Night }
+    - { path: metadata.satellite, label: Satellite }
+    - { path: timestamp, label: Acquired, format: datetime }
+
+transport:
+  type: http_poll
+  # FIRMS area API: https://firms.modaps.eosdis.nasa.gov/api/area/ (free MAP_KEY; 5000 transactions / 10 min)
+  url: 'https://firms.modaps.eosdis.nasa.gov/api/area/csv/${FIRMS_MAP_KEY}/VIIRS_SNPP_NRT/world/1'
+  timeout: '60s'
+  interval: '30m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: csv
+  # A worldwide day is tens of thousands of rows; keep the first 2000.
+  max_records: 2000
+
+entity:
+  external_id: "=concat(latitude, ',', longitude, '@', acq_date, 'T', acq_time)"
+  name: "=concat('VIIRS fire ', acq_date, ' ', acq_time, 'Z')"
+  metadata:
+    frp: '=number(frp)'
+    confidence: 'confidence'
+    brightness: '=number(bright_ti4)'
+    daynight: 'daynight'
+    satellite: 'satellite'
+
+observation:
+  latitude: 'latitude'
+  longitude: 'longitude'
+  # acq_time is HHMM (UTC), sometimes without leading zeros.
+  timestamp: "=concat(acq_date, 'T', floor(number(acq_time) / 100) < 10 ? '0' : '', floor(number(acq_time) / 100), ':', number(acq_time) % 100 < 10 ? '0' : '', number(acq_time) % 100, ':00Z')"
+
+recording:
+  mode: upsert

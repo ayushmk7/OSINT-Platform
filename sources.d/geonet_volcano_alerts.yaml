@@ -1,0 +1,61 @@
+schema_version: 1
+name: geonet_volcano_alerts
+source_type: geonet_volcano
+layer_type: volcanoes_nz
+display_name: 'GeoNet NZ Volcanic Alert Levels'
+enabled: true
+
+layer:
+  id: volcanoes_nz
+  name: New Zealand volcano alert levels
+  group: Hazards
+  description: GeoNet volcanic alert level (0-5) per volcano
+
+display:
+  icon: volcano
+  color: '#2dc653'
+  color_by:
+    field: metadata.level
+    stops: [[0, '#2dc653'], [1, '#ffd60a'], [2, '#ff9e00'], [3, '#ff5400'], [5, '#d00000']]
+  size: 1.0
+  fields:
+    - { path: metadata.level, label: Alert level, format: number, precision: 0 }
+    - { path: metadata.aviation_colour, label: Aviation colour code }
+    - { path: metadata.activity, label: Activity }
+    - { path: metadata.hazards, label: Hazards }
+    - { path: metadata.url, label: GeoNet page, format: link }
+
+transport:
+  type: http_poll
+  # https://api.geonet.org.nz/#volcano (volcano/val)
+  url: 'https://api.geonet.org.nz/volcano/val'
+  headers:
+    Accept: 'application/vnd.geo+json;version=2'
+  timeout: '15s'
+  interval: '1h'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: geojson
+  max_records: 100
+
+entity:
+  external_id: 'properties.volcanoID'
+  name: 'properties.volcanoTitle'
+  metadata:
+    level: 'properties.level'
+    aviation_colour: 'properties.acc'
+    activity: 'properties.activity'
+    hazards: 'properties.hazards'
+    url: "=concat('https://www.geonet.org.nz/volcano/', properties.volcanoID)"
+
+observation:
+  latitude: 'geometry.coordinates[1]'
+  longitude: 'geometry.coordinates[0]'
+
+recording:
+  mode: upsert

@@ -1,0 +1,85 @@
+schema_version: 1
+name: aisstream_global_ais
+source_type: aisstream
+layer_type: maritime
+display_name: 'Global AIS (aisstream.io)'
+enabled: true
+
+layer:
+  id: vessels_ais
+  name: Vessels (global AIS)
+  group: Maritime
+  description: Live AIS position reports worldwide via the aisstream.io websocket (free API key)
+
+display:
+  icon: ship
+  color: '#29b6f6'
+  color_by:
+    field: speed
+    stops: [[0, '#78909c'], [1, '#29b6f6'], [12, '#0277bd'], [25, '#1a237e']]
+  size: 0.7
+  rotate: true
+  trail: { enabled: true, max_points: 30 }
+  ttl: '30m'
+  fields:
+    - { path: metadata.ship_name, label: Ship name }
+    - { path: metadata.mmsi, label: MMSI }
+    - { path: metadata.nav_status, label: Navigation status }
+    - { path: speed, label: Speed over ground, format: number, precision: 1, suffix: ' kn' }
+    - { path: heading, label: Course over ground, format: number, precision: 0, suffix: '°' }
+    - { path: timestamp, label: Received, format: datetime }
+    - { path: metadata.url, label: MarineTraffic lookup, format: link }
+
+transport:
+  type: websocket
+  # https://aisstream.io/documentation — the subscription must be sent within 3 s of
+  # connecting. Inert until AISSTREAM_API_KEY is set.
+  url: 'wss://stream.aisstream.io/v0/stream'
+  subscribe:
+    APIKey: '${AISSTREAM_API_KEY}'
+    BoundingBoxes: [[[-90, -180], [90, 180]]]
+    FilterMessageTypes: ['PositionReport']
+  batch_window: 5s
+  retry: { initial_delay: '2s', max_delay: '60s', backoff: exponential }
+
+parser:
+  format: json
+
+filter:
+  - field: MessageType
+    in: ['PositionReport']
+
+entity:
+  external_id: 'MetaData.MMSI'
+  name: '=coalesce(trim(MetaData.ShipName), concat("MMSI ", MetaData.MMSI))'
+  metadata:
+    mmsi: 'MetaData.MMSI'
+    ship_name: '=trim(MetaData.ShipName)'
+    nav_status: "=lookup('ais_nav_status', Message.PositionReport.NavigationalStatus, Message.PositionReport.NavigationalStatus)"
+  derived:
+    url:
+      template: 'https://www.marinetraffic.com/en/ais/details/ships/mmsi:{MetaData.MMSI}'
+
+observation:
+  latitude: 'MetaData.latitude'
+  longitude: 'MetaData.longitude'
+  speed: 'Message.PositionReport.Sog' # knots
+  heading: 'Message.PositionReport.Cog'
+  # MetaData.time_utc ("2026-01-01 12:00:00.000 +0000 UTC") is not ISO 8601; ingest time is used.
+
+lookups:
+  ais_nav_status:
+    '0': Under way using engine
+    '1': At anchor
+    '2': Not under command
+    '3': Restricted manoeuvrability
+    '4': Constrained by draught
+    '5': Moored
+    '6': Aground
+    '7': Engaged in fishing
+    '8': Under way sailing
+    '14': AIS-SART / MOB / EPIRB active
+    '15': Not defined
+
+recording:
+  mode: append

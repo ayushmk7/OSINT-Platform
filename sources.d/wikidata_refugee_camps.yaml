@@ -1,0 +1,86 @@
+# Refugee and internally-displaced-persons camps, with population where recorded.
+# Source: Wikidata Query Service (https://query.wikidata.org/, CC0). The query is POSTed as a
+# form so it stays readable here. WDQS asks clients for a descriptive User-Agent with contact
+# details: set MKOSINT_CONTACT to a URL or e-mail address (optional; a generic value is used
+# otherwise). Items are ordered by sitelink count so the most notable ones survive the LIMIT.
+schema_version: 1
+name: wikidata_refugee_camps
+source_type: wikidata_sparql
+layer_type: refugee_camps
+display_name: 'Refugee & IDP camps'
+enabled: true
+
+layer:
+  id: refugee_camps
+  name: Refugee & IDP camps
+  group: Conflict
+  description: 'Wikidata: refugee, IDP and displaced-persons camps'
+
+display:
+  icon: pin
+  color: '#ffab40'
+  color_by:
+    field: metadata.population
+    stops: [[0, '#ffe0b2'], [20000, '#ffab40'], [100000, '#e65100']]
+    default: '#ffcc80'
+  size: 0.9
+  # Reference data refreshed daily: no ttl.
+  fields:
+    - { path: metadata.population, label: Population, format: number, precision: 0 }
+    - { path: metadata.country, label: Country }
+    - { path: metadata.kind, label: Type }
+    - { path: metadata.wikidata_url, label: Wikidata, format: link }
+
+transport:
+  type: http_poll
+  url: 'https://query.wikidata.org/sparql'
+  method: POST
+  content_type: application/x-www-form-urlencoded
+  headers:
+    Accept: 'application/sparql-results+json'
+    User-Agent: 'MK-OSINT/1.0 (${MKOSINT_CONTACT:-https://github.com/}) wikidata-layers'
+  body:
+    query: |
+      SELECT ?item (SAMPLE(?l) AS ?label) (SAMPLE(?la) AS ?lat) (SAMPLE(?lo) AS ?lon) (SAMPLE(?cl) AS ?country) (SAMPLE(?kl) AS ?kind) (MAX(?sl) AS ?sitelinks) (MAX(?pop) AS ?population)
+      WHERE {
+        { ?item wdt:P31 ?k . ?k wdt:P279* wd:Q622499 } .
+        ?item p:P625/psv:P625 [ wikibase:geoLatitude ?la ; wikibase:geoLongitude ?lo ; wikibase:geoGlobe wd:Q2 ] .
+        ?item wikibase:sitelinks ?sl .
+        FILTER NOT EXISTS { ?item wdt:P576 [] } FILTER NOT EXISTS { ?item wdt:P3999 [] }
+        OPTIONAL { ?item rdfs:label ?l FILTER(lang(?l) = "en") }
+        OPTIONAL { ?k rdfs:label ?kl FILTER(lang(?kl) = "en") }
+        OPTIONAL { ?item wdt:P17 ?c . ?c rdfs:label ?cl FILTER(lang(?cl) = "en") }
+        OPTIONAL { ?item wdt:P1082 ?pop }
+      }
+      GROUP BY ?item
+      ORDER BY DESC(?sitelinks)
+      LIMIT 3000
+  timeout: '60s'
+  interval: '24h'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '30s'
+    max_delay: '5m'
+
+parser:
+  format: json
+  records_path: 'results.bindings'
+  max_records: 3000
+
+entity:
+  external_id: 'item.value'
+  name: '=coalesce(label.value, kind.value, item.value)'
+  metadata:
+    country: 'country.value'
+    kind: 'kind.value'
+    population: '=number(population.value)'
+    wikidata_url: 'item.value'
+    sitelinks: '=number(sitelinks.value)'
+
+observation:
+  latitude: '=number(lat.value)'
+  longitude: '=number(lon.value)'
+
+recording:
+  mode: upsert

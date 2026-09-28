@@ -1,0 +1,87 @@
+schema_version: 1
+name: digitraffic_ais_baltic
+source_type: digitraffic
+layer_type: maritime
+display_name: 'Baltic AIS (Fintraffic Digitraffic)'
+enabled: true
+
+layer:
+  id: vessels_baltic
+  name: Vessels (Baltic AIS)
+  group: Maritime
+  description: Live AIS positions in the Baltic Sea from the Finnish coastal network, Digitraffic (CC BY 4.0)
+
+display:
+  icon: ship
+  color: '#4fc3f7'
+  color_by:
+    field: speed
+    stops: [[0, '#90a4ae'], [1, '#4fc3f7'], [12, '#0288d1'], [25, '#01579b']]
+  size: 0.8
+  rotate: true
+  trail: { enabled: true, max_points: 20 }
+  ttl: '30m'
+  fields:
+    - { path: metadata.mmsi, label: MMSI }
+    - { path: metadata.nav_status, label: Navigation status }
+    - { path: speed, label: Speed over ground, format: number, precision: 1, suffix: ' kn' }
+    - { path: heading, label: Course over ground, format: number, precision: 0, suffix: '°' }
+    - { path: metadata.true_heading, label: True heading, suffix: '°' }
+    - { path: timestamp, label: Position time, format: datetime }
+    - { path: metadata.url, label: MarineTraffic lookup, format: link }
+
+transport:
+  type: http_poll
+  # Digitraffic asks clients to identify themselves with a Digitraffic-User header.
+  url: 'https://meri.digitraffic.fi/api/ais/v1/locations'
+  headers:
+    Accept: 'application/json'
+    Accept-Encoding: 'gzip'
+    Digitraffic-User: 'MK-OSINT/1.0'
+  timeout: '30s'
+  interval: '2m'
+  retry: { max_attempts: 3, backoff: exponential, initial_delay: '2s', max_delay: '15s' }
+
+parser:
+  format: geojson
+  max_records: 20000
+
+# Drop positions older than 30 min (the feed keeps last-known positions of moored ships).
+filter:
+  - expr: 'properties.timestampExternal > now() - 1800000'
+
+entity:
+  external_id: 'mmsi'
+  name: '=concat("MMSI ", mmsi)'
+  metadata:
+    mmsi: 'mmsi'
+    # ITU-R M.1371 navigational status codes.
+    nav_status: "=lookup('ais_nav_status', properties.navStat, properties.navStat)"
+    true_heading: '=properties.heading == 511 ? null : properties.heading'
+  derived:
+    url:
+      template: 'https://www.marinetraffic.com/en/ais/details/ships/mmsi:{mmsi}'
+
+observation:
+  latitude: 'geometry.coordinates[1]'
+  longitude: 'geometry.coordinates[0]'
+  speed: 'properties.sog' # knots
+  heading: 'properties.cog'
+  timestamp: 'properties.timestampExternal' # epoch ms
+
+lookups:
+  ais_nav_status:
+    '0': Under way using engine
+    '1': At anchor
+    '2': Not under command
+    '3': Restricted manoeuvrability
+    '4': Constrained by draught
+    '5': Moored
+    '6': Aground
+    '7': Engaged in fishing
+    '8': Under way sailing
+    '14': AIS-SART / MOB / EPIRB active
+    '15': Not defined
+
+recording:
+  mode: append

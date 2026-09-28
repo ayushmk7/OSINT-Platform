@@ -1,0 +1,64 @@
+schema_version: 1
+name: nga_world_port_index
+source_type: nga_msi
+layer_type: maritime
+display_name: 'World Port Index (NGA)'
+enabled: true
+
+layer:
+  id: ports
+  name: Seaports
+  group: Maritime
+  description: ~3,800 ports from the NGA World Port Index (Pub. 150)
+
+display:
+  icon: port
+  color: '#4dd0e1'
+  color_by:
+    field: metadata.harbor_size
+    map: { L: '#00b8d4', M: '#4dd0e1', S: '#80deea', V: '#b2ebf2' }
+  size: 0.7
+  fields:
+    - { path: metadata.country, label: Country }
+    - { path: metadata.harbor_size, label: Harbor size (L/M/S/V) }
+    - { path: metadata.harbor_type, label: Harbor type }
+    - { path: metadata.unlocode, label: UN/LOCODE }
+    - { path: metadata.channel_depth_m, label: Channel depth, suffix: ' m' }
+    - { path: metadata.max_vessel_length_m, label: Max vessel length, suffix: ' m' }
+    - { path: metadata.water_body, label: Water body }
+    - { path: metadata.nav_area, label: NAVAREA }
+
+transport:
+  type: http_poll
+  # NGA Maritime Safety Information API; ~6 MB, updated with each Pub. 150 edition.
+  url: 'https://msi.nga.mil/api/publications/world-port-index?output=json'
+  headers:
+    Accept: 'application/json'
+  timeout: '60s'
+  interval: '7d'
+  retry: { max_attempts: 3, backoff: exponential, initial_delay: '5s', max_delay: '60s' }
+
+parser:
+  format: json
+  records_path: 'ports'
+  max_records: 10000
+
+entity:
+  external_id: 'portNumber'
+  name: '=concat(portName, ", ", countryName)'
+  metadata:
+    country: 'countryName'
+    harbor_size: 'harborSize'
+    harbor_type: 'harborType'
+    unlocode: 'unloCode'
+    channel_depth_m: 'chDepth'
+    max_vessel_length_m: 'maxVesselLength'
+    water_body: 'dodWaterBody'
+    nav_area: 'navArea'
+
+observation:
+  latitude: 'ycoord'
+  longitude: 'xcoord'
+
+recording:
+  mode: upsert

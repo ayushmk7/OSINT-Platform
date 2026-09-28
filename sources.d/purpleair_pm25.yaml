@@ -1,0 +1,68 @@
+schema_version: 1
+name: purpleair_pm25
+source_type: purpleair
+layer_type: air_quality_purpleair
+display_name: 'PurpleAir PM2.5'
+enabled: true
+
+layer:
+  id: air_quality_purpleair
+  name: PM2.5 sensors (PurpleAir)
+  group: Environment
+  description: PurpleAir outdoor sensors, 10-minute PM2.5 average (needs PURPLEAIR_API_KEY; uses API points)
+
+display:
+  icon: dot
+  color: '#9d4edd'
+  # PM2.5 µg/m³, roughly the US EPA AQI breakpoints.
+  color_by:
+    field: metadata.pm25
+    stops: [[0, '#52b788'], [12, '#ffd60a'], [35, '#ff9e00'], [55, '#e5383b'], [150, '#7b2cbf']]
+  size: 0.6
+  ttl: '2h'
+  fields:
+    - { path: metadata.pm25, label: PM2.5 (10 min), format: number, precision: 1, suffix: ' µg/m³' }
+    - { path: timestamp, label: Last seen, format: datetime }
+    - { path: metadata.url, label: Map, format: link }
+
+transport:
+  type: http_poll
+  # PurpleAir API: https://api.purpleair.com/#api-sensors-get-sensors-data
+  # Every call costs points, so poll rarely. Fields are listed in PurpleAir's own field order so
+  # the response columns are sensor_index followed by exactly these.
+  url: 'https://api.purpleair.com/v1/sensors?fields=name,latitude,longitude,last_seen,pm2.5_10minute&location_type=0&max_age=3600'
+  auth: { type: api_key, in: header, name: X-API-Key, value: '${PURPLEAIR_API_KEY}' }
+  headers:
+    Accept: 'application/json'
+  timeout: '60s'
+  interval: '1h'
+  retry:
+    max_attempts: 2
+    backoff: exponential
+    initial_delay: '10s'
+    max_delay: '60s'
+
+parser:
+  format: json
+  records_path: 'data'
+  # Rows are arrays; `fields` in the response names them.
+  array_columns: [sensor_index, name, latitude, longitude, last_seen, pm25]
+  max_records: 2000
+
+filter:
+  - expr: 'pm25 != null && pm25 >= 0'
+
+entity:
+  external_id: 'sensor_index'
+  name: 'name'
+  metadata:
+    pm25: 'pm25'
+    url: "=concat('https://map.purpleair.com/?select=', sensor_index)"
+
+observation:
+  latitude: 'latitude'
+  longitude: 'longitude'
+  timestamp: 'last_seen' # epoch seconds
+
+recording:
+  mode: upsert

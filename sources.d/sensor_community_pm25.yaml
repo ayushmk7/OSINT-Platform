@@ -1,0 +1,69 @@
+schema_version: 1
+name: sensor_community_pm25
+source_type: sensor_community
+layer_type: air_quality_pm25
+display_name: 'Sensor.Community PM2.5'
+enabled: true
+
+layer:
+  id: air_quality_pm25
+  name: PM2.5 citizen sensors
+  group: Environment
+  description: Sensor.Community (luftdaten) SDS011 particulate sensors, 5-minute averages (first 2000)
+
+display:
+  icon: dot
+  color: '#52b788'
+  # PM2.5 µg/m³, roughly the US EPA AQI breakpoints.
+  color_by:
+    field: metadata.pm25
+    stops: [[0, '#52b788'], [12, '#ffd60a'], [35, '#ff9e00'], [55, '#e5383b'], [150, '#7b2cbf']]
+  size: 0.6
+  ttl: '1h'
+  fields:
+    - { path: metadata.pm25, label: PM2.5, format: number, precision: 1, suffix: ' µg/m³' }
+    - { path: metadata.pm10, label: PM10, format: number, precision: 1, suffix: ' µg/m³' }
+    - { path: metadata.country, label: Country }
+    - { path: metadata.sensor_type, label: Sensor }
+    - { path: timestamp, label: Measured, format: datetime }
+
+transport:
+  type: http_poll
+  # https://github.com/opendata-stuttgart/meta/wiki/EN-APIs (filter API, averages of the last 5 min).
+  # The full response is ~8 MB; poll gently.
+  url: 'https://data.sensor.community/airrohr/v1/filter/type=SDS011'
+  headers:
+    Accept: 'application/json'
+  timeout: '60s'
+  interval: '15m'
+  retry:
+    max_attempts: 2
+    backoff: exponential
+    initial_delay: '10s'
+    max_delay: '60s'
+
+parser:
+  format: json
+  max_records: 2000
+
+filter:
+  - field: 'location.indoor'
+    in: [0]
+
+entity:
+  external_id: 'sensor.id'
+  name: "=concat('Sensor ', sensor.id, ' (', location.country, ')')"
+  metadata:
+    # SDS011 rows carry [P1 (PM10), P2 (PM2.5)], occasionally in the other order.
+    pm25: "=sensordatavalues[1].value_type == 'P2' ? number(sensordatavalues[1].value) : (sensordatavalues[0].value_type == 'P2' ? number(sensordatavalues[0].value) : null)"
+    pm10: "=sensordatavalues[0].value_type == 'P1' ? number(sensordatavalues[0].value) : (sensordatavalues[1].value_type == 'P1' ? number(sensordatavalues[1].value) : null)"
+    country: 'location.country'
+    sensor_type: 'sensor.sensor_type.name'
+
+observation:
+  latitude: 'location.latitude'
+  longitude: 'location.longitude'
+  timestamp: "=concat(timestamp, 'Z')" # UTC, "YYYY-MM-DD hh:mm:ss" without a zone
+
+recording:
+  mode: upsert

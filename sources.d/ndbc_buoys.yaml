@@ -1,0 +1,112 @@
+schema_version: 1
+name: ndbc_buoys
+source_type: noaa_ndbc
+layer_type: ocean_buoys
+display_name: 'NOAA NDBC Buoy Observations'
+enabled: true
+
+layer:
+  id: ocean_buoys
+  name: Ocean buoys
+  group: Weather
+  description: NOAA National Data Buoy Center, latest observation per station
+
+display:
+  icon: buoy
+  color: '#00b4d8'
+  # Significant wave height, metres.
+  color_by:
+    field: metadata.wave_height_m
+    stops: [[0, '#90e0ef'], [2, '#00b4d8'], [4, '#ffb703'], [7, '#e5383b']]
+    default: '#00b4d8'
+  size: 0.8
+  ttl: '6h'
+  fields:
+    - {
+        path: metadata.wave_height_m,
+        label: Wave height,
+        format: number,
+        precision: 1,
+        suffix: ' m'
+      }
+    - { path: metadata.wind_speed_ms, label: Wind, format: number, precision: 1, suffix: ' m/s' }
+    - { path: metadata.wind_dir, label: Wind from, format: number, precision: 0, suffix: '°' }
+    - { path: metadata.gust_ms, label: Gust, format: number, precision: 1, suffix: ' m/s' }
+    - { path: metadata.pressure_hpa, label: Pressure, format: number, precision: 1, suffix: ' hPa' }
+    - { path: metadata.air_temp_c, label: Air temp, format: number, precision: 1, suffix: ' °C' }
+    - {
+        path: metadata.water_temp_c,
+        label: Water temp,
+        format: number,
+        precision: 1,
+        suffix: ' °C'
+      }
+    - { path: timestamp, label: Observed, format: datetime }
+    - { path: metadata.url, label: Station page, format: link }
+
+transport:
+  type: http_poll
+  # https://www.ndbc.noaa.gov/docs/ndbc_web_data_guide.pdf (latest_obs.txt, refreshed every 5 min)
+  url: 'https://www.ndbc.noaa.gov/data/latest_obs/latest_obs.txt'
+  timeout: '30s'
+  interval: '15m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: csv
+  max_records: 2000
+  csv:
+    delimiter: whitespace
+    has_header: false
+    comment_prefix: '#' # the two header lines (names, units) start with '#'
+    columns:
+      [
+        stn,
+        lat,
+        lon,
+        yyyy,
+        mm,
+        dd,
+        hh,
+        mn,
+        wdir,
+        wspd,
+        gst,
+        wvht,
+        dpd,
+        apd,
+        mwd,
+        pres,
+        ptdy,
+        atmp,
+        wtmp,
+        dewp,
+        vis,
+        tide
+      ]
+
+entity:
+  external_id: 'stn'
+  name: "=concat('NDBC ', stn)"
+  # "MM" marks a missing value; number() turns it into null and the key is dropped.
+  metadata:
+    wave_height_m: '=number(wvht)'
+    wind_speed_ms: '=number(wspd)'
+    wind_dir: '=number(wdir)'
+    gust_ms: '=number(gst)'
+    pressure_hpa: '=number(pres)'
+    air_temp_c: '=number(atmp)'
+    water_temp_c: '=number(wtmp)'
+    url: "=concat('https://www.ndbc.noaa.gov/station_page.php?station=', lower(stn))"
+
+observation:
+  latitude: 'lat'
+  longitude: 'lon'
+  timestamp: "=concat(yyyy, '-', mm, '-', dd, 'T', hh, ':', mn, ':00Z')"
+
+recording:
+  mode: upsert

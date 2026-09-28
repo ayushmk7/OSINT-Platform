@@ -1,0 +1,70 @@
+schema_version: 1
+name: ourairports_navaids
+source_type: ourairports
+layer_type: aviation
+display_name: 'VOR / TACAN navaids (OurAirports)'
+enabled: true
+
+layer:
+  id: navaids
+  name: Navaids (VOR / TACAN)
+  group: Aviation
+  description: VOR, VOR-DME, VORTAC and TACAN stations worldwide, OurAirports (public domain)
+
+display:
+  icon: antenna
+  color: '#7986cb'
+  color_by:
+    field: metadata.type
+    map: { VOR: '#9fa8da', VOR-DME: '#7986cb', VORTAC: '#5c6bc0', TACAN: '#ff8a65' }
+  size: 0.6
+  fields:
+    - { path: metadata.ident, label: Ident }
+    - { path: metadata.type, label: Type }
+    - {
+        path: metadata.frequency_mhz,
+        label: Frequency,
+        format: number,
+        precision: 2,
+        suffix: ' MHz'
+      }
+    - { path: metadata.dme_channel, label: DME channel }
+    - { path: metadata.country, label: Country }
+    - { path: metadata.airport, label: Associated airport }
+
+transport:
+  type: http_poll
+  url: 'https://davidmegginson.github.io/ourairports-data/navaids.csv'
+  timeout: '30s'
+  interval: '7d'
+  retry: { max_attempts: 3, backoff: exponential, initial_delay: '2s', max_delay: '15s' }
+
+parser:
+  format: csv
+  max_records: 20000
+
+filter:
+  - field: type
+    in: ['VOR', 'VOR-DME', 'VORTAC', 'TACAN']
+
+entity:
+  external_id: 'id'
+  name: '=concat(ident, " ", name, " ", type)'
+  metadata:
+    ident: 'ident'
+    type: 'type'
+    # VOR frequencies are published in kHz; TACANs have no VHF frequency.
+    frequency_mhz: '=number(frequency_khz) / 1000'
+    dme_channel: 'dme_channel'
+    country: 'iso_country'
+    airport: 'associated_airport'
+
+observation:
+  latitude: 'latitude_deg'
+  longitude: 'longitude_deg'
+  altitude: 'elevation_ft'
+  scale:
+    altitude: 0.3048
+
+recording:
+  mode: upsert

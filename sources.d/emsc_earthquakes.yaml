@@ -1,0 +1,69 @@
+schema_version: 1
+name: emsc_earthquakes
+source_type: fdsn_event
+layer_type: earthquakes_emsc
+display_name: 'EMSC Earthquakes'
+enabled: true
+
+layer:
+  id: earthquakes_emsc
+  name: EMSC earthquakes
+  group: Hazards
+  description: EMSC Seismic Portal, M2.5+ worldwide, latest 500
+
+display:
+  icon: quake
+  color: '#f72585'
+  color_by:
+    field: metadata.magnitude
+    stops: [[2.5, '#ffd6e8'], [4, '#ff8fab'], [5.5, '#f72585'], [7, '#9d0208']]
+  size: 0.9
+  ttl: '3d'
+  fields:
+    - { path: metadata.magnitude, label: Magnitude, format: number, precision: 1 }
+    - { path: metadata.mag_type, label: Magnitude type }
+    - { path: metadata.depth, label: Depth, format: number, precision: 1, suffix: ' km' }
+    - { path: metadata.region, label: Region }
+    - { path: metadata.catalog, label: Catalog }
+    - { path: timestamp, label: Origin time, format: datetime }
+    - { path: metadata.url, label: Event page, format: link }
+
+transport:
+  type: http_poll
+  # FDSN event web service: https://www.seismicportal.eu/fdsn-wsevent.html
+  url: 'https://www.seismicportal.eu/fdsnws/event/1/query?format=json&minmag=2.5&orderby=time&limit=500'
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '5m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '2s'
+    max_delay: '30s'
+
+parser:
+  format: geojson
+  max_records: 500
+
+entity:
+  external_id: 'id'
+  name: 'properties.flynn_region'
+  metadata:
+    magnitude: 'properties.mag'
+    mag_type: 'properties.magtype'
+    depth: 'properties.depth'
+    region: 'properties.flynn_region'
+    catalog: 'properties.source_catalog'
+    url: "=concat('https://www.seismicportal.eu/eventdetails.html?unid=', id)"
+
+observation:
+  latitude: 'properties.lat'
+  longitude: 'properties.lon'
+  altitude: 'properties.depth'
+  timestamp: 'properties.time'
+  scale:
+    altitude: -1000 # km positive-down -> metres below the surface
+
+recording:
+  mode: upsert

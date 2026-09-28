@@ -1,0 +1,87 @@
+# Large power plants worldwide, coloured by primary fuel.
+# Source: WRI Global Power Plant Database v1.3 (https://datasets.wri.org/dataset/globalpowerplantdatabase,
+# CC BY 4.0), CSV from the project's GitHub repository. The database is no longer updated
+# (last release 2021), so this polls weekly. The filter keeps plants of 600 MW or more
+# (~2,800 of ~35,000 rows); `max_records` must cover the whole file because it caps rows
+# before the filter runs.
+schema_version: 1
+name: wri_global_power_plants
+source_type: wri_gppd
+layer_type: power_plants
+display_name: 'Power plants (600 MW+)'
+enabled: true
+
+layer:
+  id: power_plants
+  name: Power plants (600 MW+)
+  group: Infrastructure
+  description: WRI Global Power Plant Database, coloured by primary fuel
+
+display:
+  icon: power
+  color: '#ffc400'
+  color_by:
+    field: metadata.primary_fuel
+    map:
+      Coal: '#6d4c41'
+      Gas: '#ff9100'
+      Oil: '#d84315'
+      Petcoke: '#8d6e63'
+      Nuclear: '#ffea00'
+      Hydro: '#2979ff'
+      Wind: '#00e5ff'
+      Solar: '#ffd740'
+      Geothermal: '#ff4081'
+      Biomass: '#76ff03'
+      Waste: '#9e9d24'
+      Storage: '#b388ff'
+      Cogeneration: '#ffab40'
+      Wave and Tidal: '#1de9b6'
+    default: '#bdbdbd'
+  size: 0.9
+  fields:
+    - { path: metadata.primary_fuel, label: Fuel }
+    - { path: metadata.capacity_mw, label: Capacity, format: number, precision: 0, suffix: ' MW' }
+    - { path: metadata.owner, label: Owner }
+    - { path: metadata.commissioning_year, label: Commissioned, format: number, precision: 0 }
+    - { path: metadata.country, label: Country }
+    - { path: metadata.url, label: Source, format: link }
+
+transport:
+  type: http_poll
+  url: 'https://raw.githubusercontent.com/wri/global-power-plant-database/master/output_database/global_power_plant_database.csv'
+  method: GET
+  headers:
+    Accept: 'text/csv'
+  timeout: '60s'
+  interval: '7d'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '10s'
+    max_delay: '2m'
+
+parser:
+  format: csv
+  max_records: 40000
+
+filter:
+  - expr: 'number(capacity_mw) >= 600'
+
+entity:
+  external_id: 'gppd_idnr'
+  name: 'name'
+  metadata:
+    primary_fuel: 'primary_fuel'
+    capacity_mw: '=number(capacity_mw)'
+    owner: 'owner'
+    commissioning_year: '=number(commissioning_year)'
+    country: 'country_long'
+    url: 'url'
+
+observation:
+  latitude: 'latitude'
+  longitude: 'longitude'
+
+recording:
+  mode: upsert

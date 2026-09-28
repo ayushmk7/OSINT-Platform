@@ -1,0 +1,63 @@
+schema_version: 1
+name: adsb_lol_ladd
+source_type: adsb_lol
+layer_type: aviation
+display_name: 'LADD-listed aircraft (adsb.lol)'
+enabled: true
+
+layer:
+  id: aircraft_ladd
+  name: LADD aircraft
+  group: Aviation
+  description: FAA Limiting Aircraft Data Displayed program, adsb.lol
+
+display:
+  icon: plane
+  color: '#ec407a'
+  size: 0.9
+  rotate: true
+  trail: { enabled: true, max_points: 20 }
+  ttl: '5m'
+  fields:
+    - { path: metadata.callsign, label: Callsign }
+    - { path: metadata.registration, label: Registration }
+    - { path: metadata.type, label: Aircraft type }
+    - { path: metadata.squawk, label: Squawk }
+    - { path: altitude, label: Altitude, format: number, precision: 0, suffix: ' m' }
+    - { path: speed, label: Ground speed, format: number, precision: 0, suffix: ' kt' }
+    - { path: timestamp, label: Last seen, format: datetime }
+
+transport:
+  type: http_poll
+  # adsb.lol open API (ODbL data): aircraft on the FAA LADD list.
+  url: 'https://api.adsb.lol/v2/ladd'
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '60s'
+  retry: { max_attempts: 2, backoff: exponential, initial_delay: '2s', max_delay: '10s' }
+
+parser:
+  format: json
+  records_path: 'ac'
+  max_records: 5000
+
+entity:
+  external_id: 'hex'
+  name: '=trim(flight) ?? r ?? hex'
+  metadata:
+    callsign: '=trim(flight)'
+    registration: 'r'
+    type: 't'
+    squawk: 'squawk'
+
+observation:
+  latitude: 'lat'
+  longitude: 'lon'
+  # alt_baro is feet, or the string "ground".
+  altitude: "=alt_baro == 'ground' ? 0 : number(alt_baro) * 0.3048"
+  speed: 'gs'
+  heading: '=track ?? true_heading'
+
+recording:
+  mode: append

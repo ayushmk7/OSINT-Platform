@@ -1,0 +1,103 @@
+# US land border crossings (Canada and Mexico) with current CBP wait times.
+# Source: U.S. Customs and Border Protection Border Wait Times API (https://bwt.cbp.gov/),
+# keyless JSON. The feed carries no coordinates: lookups/s3_cbp_port_coords.csv maps each CBP
+# port_number to the port location published in the BTS Border Crossing Entry Data
+# (https://data.bts.gov/, dataset keg4-3bc2). Crossings of one port share its point.
+schema_version: 1
+name: cbp_border_wait_times
+source_type: cbp_bwt
+layer_type: border_wait_times
+display_name: 'US border wait times'
+enabled: true
+
+lookups:
+  cbp_ports: lookups/s3_cbp_port_coords.csv
+
+layer:
+  id: border_wait_times
+  name: US border wait times
+  group: Other
+  description: CBP land ports, coloured by passenger-vehicle delay
+
+display:
+  icon: pin
+  color: '#aed581'
+  color_by:
+    field: metadata.car_delay_min
+    stops: [[0, '#00e676'], [30, '#ffea00'], [60, '#ff9100'], [120, '#ff1744']]
+    default: '#9e9e9e'
+  size: 0.9
+  ttl: '6h'
+  fields:
+    - { path: metadata.crossing, label: Crossing }
+    - { path: metadata.border, label: Border }
+    - { path: metadata.port_status, label: Status }
+    - {
+        path: metadata.car_delay_min,
+        label: Cars (standard),
+        format: number,
+        precision: 0,
+        suffix: ' min'
+      }
+    - {
+        path: metadata.sentri_delay_min,
+        label: NEXUS/SENTRI,
+        format: number,
+        precision: 0,
+        suffix: ' min'
+      }
+    - {
+        path: metadata.pedestrian_delay_min,
+        label: Pedestrians,
+        format: number,
+        precision: 0,
+        suffix: ' min'
+      }
+    - {
+        path: metadata.truck_delay_min,
+        label: Trucks (standard),
+        format: number,
+        precision: 0,
+        suffix: ' min'
+      }
+    - { path: metadata.hours, label: Hours }
+    - { path: metadata.updated, label: Updated }
+
+transport:
+  type: http_poll
+  url: 'https://bwt.cbp.gov/api/bwtnew'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '15m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: json
+  max_records: 500
+
+entity:
+  external_id: 'port_number'
+  name: '=port_name + (crossing_name ? " - " + crossing_name : "")'
+  metadata:
+    crossing: 'crossing_name'
+    border: 'border'
+    port_status: 'port_status'
+    hours: 'hours'
+    car_delay_min: '=number(passenger_vehicle_lanes.standard_lanes.delay_minutes)'
+    sentri_delay_min: '=number(passenger_vehicle_lanes.NEXUS_SENTRI_lanes.delay_minutes)'
+    pedestrian_delay_min: '=number(pedestrian_lanes.standard_lanes.delay_minutes)'
+    truck_delay_min: '=number(commercial_vehicle_lanes.standard_lanes.delay_minutes)'
+    updated: '=concat(date, " ", time)'
+
+observation:
+  latitude: "=number(lookup('cbp_ports', port_number).lat)"
+  longitude: "=number(lookup('cbp_ports', port_number).lon)"
+
+recording:
+  mode: upsert

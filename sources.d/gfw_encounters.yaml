@@ -1,0 +1,63 @@
+schema_version: 1
+name: gfw_encounters
+source_type: global_fishing_watch
+layer_type: maritime
+display_name: 'At-sea encounters (Global Fishing Watch)'
+enabled: true
+
+layer:
+  id: vessel_encounters
+  name: Vessel encounters
+  group: Maritime
+  description: Most recent at-sea encounters between vessels (possible transshipment), Global Fishing Watch
+
+display:
+  icon: alert
+  color: '#ffab40'
+  size: 0.9
+  ttl: '30d'
+  fields:
+    - { path: metadata.vessel, label: Vessel }
+    - { path: metadata.flag, label: Flag }
+    - { path: metadata.other_vessel, label: Encountered vessel }
+    - { path: metadata.other_flag, label: Encountered flag }
+    - { path: metadata.encounter_type, label: Encounter type }
+    - { path: metadata.start, label: Start, format: datetime }
+    - { path: metadata.end, label: End, format: datetime }
+
+transport:
+  type: http_poll
+  # GFW Events API v3 (non-commercial use; free token at globalfishingwatch.org/our-apis).
+  # Inert until GFW_API_TOKEN is set. Events lag real time by ~3 days, so poll rarely.
+  url: 'https://gateway.api.globalfishingwatch.org/v3/events?datasets[0]=public-global-encounters-events:latest&sort=-start&limit=200&offset=0'
+  auth: { type: bearer, token: '${GFW_API_TOKEN}' }
+  headers:
+    Accept: 'application/json'
+  timeout: '60s'
+  interval: '6h'
+  retry: { max_attempts: 3, backoff: exponential, initial_delay: '5s', max_delay: '60s' }
+
+parser:
+  format: json
+  records_path: 'entries'
+  max_records: 200
+
+entity:
+  external_id: 'id'
+  name: '=concat("Encounter: ", coalesce(vessel.name, vessel.ssvid), " / ", coalesce(encounter.vessel.name, encounter.vessel.ssvid))'
+  metadata:
+    vessel: 'vessel.name'
+    flag: 'vessel.flag'
+    other_vessel: 'encounter.vessel.name'
+    other_flag: 'encounter.vessel.flag'
+    encounter_type: 'encounter.type'
+    start: 'start'
+    end: 'end'
+
+observation:
+  latitude: 'position.lat'
+  longitude: 'position.lon'
+  timestamp: 'start'
+
+recording:
+  mode: upsert

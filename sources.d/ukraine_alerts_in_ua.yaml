@@ -1,0 +1,84 @@
+# Active air-raid, artillery and other alerts in Ukraine down to raion / hromada level.
+# Source: alerts.in.ua API v1 `GET /v1/alerts/active.json` (https://devs.alerts.in.ua/).
+# Needs a token (request one from api@alerts.in.ua) in ALERTS_IN_UA_TOKEN. The API asks
+# clients not to poll faster than a few times per minute; 60 s is well within that.
+# Alerts carry no coordinates: each is drawn at its oblast's Wikidata centroid
+# (lookups/s3_ua_oblast_centroids.json), so raion alerts stack on the oblast point.
+schema_version: 1
+name: ukraine_alerts_in_ua
+source_type: alerts_in_ua
+layer_type: ukraine_alerts
+display_name: 'Ukraine alerts (alerts.in.ua)'
+enabled: true
+
+lookups:
+  ua_regions: lookups/s3_ua_oblast_centroids.json
+
+layer:
+  id: ukraine_alerts
+  name: Ukraine active alerts
+  group: Conflict
+  description: alerts.in.ua active alerts, coloured by alert type
+
+display:
+  icon: alert
+  color: '#ff1744'
+  color_by:
+    field: metadata.alert_type
+    map:
+      air_raid: '#ff1744'
+      artillery_shelling: '#ff9100'
+      urban_fights: '#d500f9'
+      chemical: '#76ff03'
+      nuclear: '#ffea00'
+    default: '#ff5252'
+  size: 1.0
+  # Active alerts only: an alert that stops being reported disappears after 10 minutes.
+  ttl: '10m'
+  fields:
+    - { path: metadata.alert_type, label: Type }
+    - { path: metadata.location_type, label: Level }
+    - { path: metadata.oblast, label: Oblast }
+    - { path: metadata.raion, label: Raion }
+    - { path: metadata.started_at, label: Started, format: datetime }
+    - { path: metadata.notes, label: Notes }
+
+transport:
+  type: http_poll
+  url: 'https://api.alerts.in.ua/v1/alerts/active.json'
+  method: GET
+  auth: { type: bearer, token: '${ALERTS_IN_UA_TOKEN}' }
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '60s'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '30s'
+
+parser:
+  format: json
+  records_path: 'alerts'
+  max_records: 1000
+
+entity:
+  external_id: 'id'
+  name: 'location_title'
+  metadata:
+    alert_type: 'alert_type'
+    location_type: 'location_type'
+    oblast: 'location_oblast'
+    raion: 'location_raion'
+    started_at: 'started_at'
+    notes: 'notes'
+
+observation:
+  latitude: "=lookup('ua_regions', location_oblast).lat"
+  longitude: "=lookup('ua_regions', location_oblast).lon"
+  # Refreshed on every poll so ttl only drops alerts that are no longer active.
+  timestamp: '=now()'
+
+recording:
+  mode: upsert

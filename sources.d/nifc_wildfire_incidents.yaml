@@ -1,0 +1,74 @@
+schema_version: 1
+name: nifc_wildfire_incidents
+source_type: nifc_wfigs
+layer_type: wildfire_incidents
+display_name: 'NIFC Current Wildfire Incidents'
+enabled: true
+
+layer:
+  id: wildfire_incidents
+  name: US wildfire incidents
+  group: Hazards
+  description: NIFC WFIGS current wildfire points of origin (US)
+
+display:
+  icon: fire
+  color: '#ff4d00'
+  # Incident size in acres.
+  color_by:
+    field: metadata.acres
+    stops: [[0, '#ffba08'], [100, '#f48c06'], [1000, '#dc2f02'], [10000, '#9d0208']]
+  size: 1.0
+  fields:
+    - { path: metadata.acres, label: Size, format: number, precision: 0, suffix: ' acres' }
+    - {
+        path: metadata.percent_contained,
+        label: Contained,
+        format: number,
+        precision: 0,
+        suffix: '%'
+      }
+    - { path: metadata.cause, label: Cause }
+    - { path: metadata.personnel, label: Personnel, format: number, precision: 0 }
+    - { path: metadata.state, label: State }
+    - { path: metadata.discovered, label: Discovered, format: datetime }
+    - { path: timestamp, label: Updated, format: datetime }
+
+transport:
+  type: http_poll
+  # WFIGS Incident Locations (Current), ArcGIS FeatureServer query:
+  # https://data-nifc.opendata.arcgis.com/datasets/nifc::wfigs-current-interagency-fire-perimeters
+  url: 'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Incident_Locations_Current/FeatureServer/0/query?where=IncidentTypeCategory%3D%27WF%27&outFields=UniqueFireIdentifier,IncidentName,IncidentSize,PercentContained,FireCause,TotalIncidentPersonnel,POOState,POOCounty,FireDiscoveryDateTime,ModifiedOnDateTime_dt&f=geojson&resultRecordCount=2000'
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '15m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: geojson
+  max_records: 2000
+
+entity:
+  external_id: 'properties.UniqueFireIdentifier'
+  name: 'properties.IncidentName'
+  metadata:
+    acres: 'properties.IncidentSize'
+    percent_contained: 'properties.PercentContained'
+    cause: 'properties.FireCause'
+    personnel: 'properties.TotalIncidentPersonnel'
+    state: 'properties.POOState'
+    county: 'properties.POOCounty'
+    discovered: 'properties.FireDiscoveryDateTime'
+
+observation:
+  latitude: 'geometry.coordinates[1]'
+  longitude: 'geometry.coordinates[0]'
+  timestamp: 'properties.ModifiedOnDateTime_dt'
+
+recording:
+  mode: upsert

@@ -1,0 +1,67 @@
+schema_version: 1
+name: usgs_quakes_m45_week
+source_type: usgs_earthquakes
+layer_type: earthquakes_m45
+display_name: 'USGS M4.5+ Earthquakes (7 days)'
+enabled: true
+
+layer:
+  id: earthquakes_m45
+  name: M4.5+ earthquakes
+  group: Hazards
+  description: USGS worldwide M4.5+, past 7 days
+
+display:
+  icon: quake
+  color: '#ff7b00'
+  color_by:
+    field: metadata.magnitude
+    stops: [[4.5, '#ffd166'], [5.5, '#ff7b00'], [6.5, '#ff3b3b'], [7.5, '#ff0054']]
+  size: 1.1
+  ttl: '7d'
+  fields:
+    - { path: metadata.magnitude, label: Magnitude, format: number, precision: 1 }
+    - { path: metadata.mag_type, label: Magnitude type }
+    - { path: metadata.depth, label: Depth, format: number, precision: 1, suffix: ' km' }
+    - { path: metadata.tsunami, label: Tsunami flag, format: bool }
+    - { path: timestamp, label: Origin time, format: datetime }
+    - { path: metadata.url, label: Event page, format: link }
+
+transport:
+  type: http_poll
+  # https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php (refreshed every minute upstream)
+  url: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson'
+  headers:
+    Accept: 'application/json'
+  timeout: '15s'
+  interval: '5m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '2s'
+    max_delay: '30s'
+
+parser:
+  format: geojson
+  max_records: 1000
+
+entity:
+  external_id: 'id'
+  name: 'properties.place'
+  metadata:
+    magnitude: 'properties.mag'
+    mag_type: 'properties.magType'
+    depth: 'geometry.coordinates[2]'
+    tsunami: '=properties.tsunami == 1'
+    url: 'properties.url'
+
+observation:
+  latitude: 'geometry.coordinates[1]'
+  longitude: 'geometry.coordinates[0]'
+  altitude: 'geometry.coordinates[2]'
+  timestamp: 'properties.time'
+  scale:
+    altitude: -1000 # km positive-down -> metres below the surface
+
+recording:
+  mode: upsert

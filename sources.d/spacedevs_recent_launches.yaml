@@ -1,0 +1,74 @@
+schema_version: 1
+name: spacedevs_recent_launches
+source_type: spacedevs
+layer_type: space
+display_name: 'Recent launches (The Space Devs)'
+enabled: true
+
+layer:
+  id: launches_recent
+  name: Recent launches
+  group: Space
+  description: Last 30 launches worldwide and their outcome, Launch Library 2
+
+display:
+  icon: rocket
+  color: '#80cbc4'
+  color_by:
+    field: metadata.status
+    map:
+      {
+        Success: '#69f0ae',
+        Failure: '#ff1744',
+        'Partial Failure': '#ffab40',
+        'In Flight': '#40c4ff',
+        Deployed: '#b388ff'
+      }
+  size: 0.9
+  ttl: '14d'
+  fields:
+    - { path: timestamp, label: Launched, format: datetime }
+    - { path: metadata.status, label: Outcome }
+    - { path: metadata.provider, label: Provider }
+    - { path: metadata.rocket, label: Rocket }
+    - { path: metadata.mission, label: Mission }
+    - { path: metadata.orbit, label: Orbit }
+    - { path: metadata.pad, label: Pad }
+    - { path: metadata.location, label: Site }
+    - { path: metadata.url, label: API record, format: link }
+
+transport:
+  type: http_poll
+  # Anonymous tier: 15 requests/hour, shared with the upcoming-launches source.
+  url: 'https://ll.thespacedevs.com/2.3.0/launches/previous/?limit=30'
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '1h'
+  retry: { max_attempts: 2, backoff: fixed, initial_delay: '60s', max_delay: '60s' }
+
+parser:
+  format: json
+  records_path: 'results'
+  max_records: 30
+
+entity:
+  external_id: 'id'
+  name: 'name'
+  metadata:
+    status: 'status.abbrev'
+    provider: 'launch_service_provider.name'
+    rocket: 'rocket.configuration.full_name'
+    mission: 'mission.name'
+    orbit: 'mission.orbit.name'
+    pad: 'pad.name'
+    url: 'url'
+    location: 'pad.location.name'
+
+observation:
+  latitude: 'pad.latitude'
+  longitude: 'pad.longitude'
+  timestamp: 'net'
+
+recording:
+  mode: upsert

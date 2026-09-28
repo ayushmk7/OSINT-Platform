@@ -1,0 +1,70 @@
+schema_version: 1
+name: celestrak_geo
+source_type: celestrak_gp
+layer_type: space
+display_name: 'CelesTrak: Geostationary belt'
+enabled: true
+
+layer:
+  id: geostationary
+  name: Geostationary belt
+  group: Space
+  description: Active geosynchronous satellites, CelesTrak
+
+display:
+  icon: satellite
+  color: '#ff6d00'
+  size: 0.6
+  trail: { enabled: false, max_points: 30 }
+  # Positions are re-propagated locally every 5m; stale only if the backend stops.
+  ttl: '1h'
+  fields:
+    - { path: metadata.norad_id, label: NORAD ID }
+    - { path: metadata.intl_designator, label: Intl designator }
+    - { path: altitude, label: Altitude, format: number, precision: 0, suffix: ' m' }
+    - { path: speed, label: Inertial speed, format: number, precision: 0, suffix: ' m/s' }
+    - { path: metadata.inclination, label: Inclination, format: number, precision: 2, suffix: '°' }
+    - { path: metadata.period_min, label: Period, format: number, precision: 1, suffix: ' min' }
+    - { path: metadata.epoch, label: Element epoch, format: datetime }
+    - { path: metadata.url, label: CelesTrak, format: link }
+
+transport:
+  type: http_poll
+  # CelesTrak GP data (OMM JSON). GP sets update at most a few times a day and CelesTrak
+  # asks clients not to refetch the same data more often than every 2 h, so fetch every 6 h
+  # and move satellites between fetches with local SGP4 propagation.
+  url: 'https://celestrak.org/NORAD/elements/gp.php?GROUP=geo&FORMAT=json'
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '6h'
+  propagate_interval: '5m'
+  retry: { max_attempts: 3, backoff: exponential, initial_delay: '5s', max_delay: '60s' }
+
+parser:
+  format: omm_json
+  max_records: 700
+
+entity:
+  external_id: 'norad_id'
+  name: 'name'
+  metadata:
+    norad_id: 'norad_id'
+    intl_designator: 'intl_designator'
+    inclination: 'inclination'
+    period_min: 'period_min'
+    epoch: 'epoch'
+  derived:
+    url:
+      template: 'https://celestrak.org/satcat/table-satcat.php?CATNR={norad_id}'
+
+observation:
+  latitude: 'lat'
+  longitude: 'lon'
+  altitude: 'alt'
+  speed: 'speed'
+  heading: 'heading'
+  timestamp: 'timestamp'
+
+recording:
+  mode: upsert

@@ -1,0 +1,81 @@
+# UCDP Georeferenced Event Dataset (GED) Candidate: organised-violence events with at least
+# one death, released monthly by the Uppsala Conflict Data Program.
+# Source: UCDP API (https://ucdp.uu.se/apidocs/). Needs an access token (free, request by
+# e-mail as described in the API docs) in UCDP_API_TOKEN. Every call names a dataset
+# version; the monthly candidate release is set by UCDP_GED_VERSION (default 26.0.8 - bump it
+# when UCDP publishes a newer monthly release). Up to 3 pages of 1,000 events per poll.
+schema_version: 1
+name: ucdp_ged_candidate_events
+source_type: ucdp_ged
+layer_type: ucdp_conflict_events
+display_name: 'UCDP conflict events (GED Candidate)'
+enabled: true
+
+layer:
+  id: ucdp_conflict_events
+  name: UCDP conflict events
+  group: Conflict
+  description: UCDP GED Candidate monthly release, coloured by best fatality estimate
+
+display:
+  icon: conflict
+  color: '#ff5252'
+  color_by:
+    field: metadata.deaths_best
+    stops: [[1, '#ffd180'], [5, '#ff9100'], [25, '#ff3d00'], [100, '#b71c1c']]
+  size: 0.8
+  fields:
+    - { path: metadata.violence_type, label: Violence type }
+    - { path: metadata.conflict, label: Conflict }
+    - { path: metadata.side_a, label: Side A }
+    - { path: metadata.side_b, label: Side B }
+    - { path: metadata.deaths_best, label: Deaths (best), format: number, precision: 0 }
+    - { path: metadata.deaths_civilians, label: Civilian deaths, format: number, precision: 0 }
+    - { path: metadata.date_start, label: Date }
+    - { path: metadata.where, label: Location }
+    - { path: metadata.headline, label: Source headline }
+
+transport:
+  type: http_poll
+  url: 'https://ucdpapi.pcr.uu.se/api/gedevents/${UCDP_GED_VERSION:-26.0.8}'
+  method: GET
+  headers:
+    Accept: 'application/json'
+    x-ucdp-access-token: '${UCDP_API_TOKEN}'
+  timeout: '60s'
+  # Monthly dataset: daily polling is more than enough.
+  interval: '24h'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '30s'
+    max_delay: '5m'
+  pagination: { type: page, param: page, start: 0, size_param: pagesize, size: 1000, max_pages: 3 }
+
+parser:
+  format: json
+  records_path: 'Result'
+  max_records: 3000
+
+entity:
+  external_id: 'id'
+  name: '=concat(conflict_name, " - ", where_coordinates)'
+  metadata:
+    violence_type: "=type_of_violence == 1 ? 'state-based' : (type_of_violence == 2 ? 'non-state' : 'one-sided')"
+    conflict: 'conflict_name'
+    side_a: 'side_a'
+    side_b: 'side_b'
+    deaths_best: '=number(best)'
+    deaths_civilians: '=number(deaths_civilians)'
+    date_start: 'date_start'
+    where: 'where_coordinates'
+    country: 'country'
+    headline: 'source_headline'
+
+observation:
+  latitude: 'latitude'
+  longitude: 'longitude'
+  timestamp: 'date_start'
+
+recording:
+  mode: upsert

@@ -1,0 +1,67 @@
+schema_version: 1
+name: geonet_nz_quakes
+source_type: geonet_quake
+layer_type: earthquakes_nz
+display_name: 'GeoNet NZ Earthquakes'
+enabled: true
+
+layer:
+  id: earthquakes_nz
+  name: New Zealand earthquakes
+  group: Hazards
+  description: GeoNet, felt (MMI 3+) quakes, latest 100
+
+display:
+  icon: quake
+  color: '#4cc9f0'
+  color_by:
+    field: metadata.mmi
+    stops: [[3, '#90e0ef'], [5, '#f9c74f'], [7, '#f94144']]
+  size: 0.9
+  ttl: '7d'
+  fields:
+    - { path: metadata.magnitude, label: Magnitude, format: number, precision: 1 }
+    - { path: metadata.mmi, label: Intensity (MMI), format: number, precision: 0 }
+    - { path: metadata.depth, label: Depth, format: number, precision: 1, suffix: ' km' }
+    - { path: metadata.quality, label: Solution quality }
+    - { path: timestamp, label: Origin time, format: datetime }
+    - { path: metadata.url, label: Event page, format: link }
+
+transport:
+  type: http_poll
+  # https://api.geonet.org.nz/ (quake endpoint, MMI >= 3)
+  url: 'https://api.geonet.org.nz/quake?MMI=3'
+  headers:
+    Accept: 'application/vnd.geo+json;version=2'
+  timeout: '15s'
+  interval: '5m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '2s'
+    max_delay: '30s'
+
+parser:
+  format: geojson
+  max_records: 200
+
+entity:
+  external_id: 'properties.publicID'
+  name: 'properties.locality'
+  metadata:
+    magnitude: '=round(properties.magnitude, 1)'
+    mmi: 'properties.mmi'
+    depth: '=round(properties.depth, 1)'
+    quality: 'properties.quality'
+    url: "=concat('https://www.geonet.org.nz/earthquake/', properties.publicID)"
+
+observation:
+  latitude: 'geometry.coordinates[1]'
+  longitude: 'geometry.coordinates[0]'
+  altitude: 'properties.depth'
+  timestamp: 'properties.time'
+  scale:
+    altitude: -1000
+
+recording:
+  mode: upsert

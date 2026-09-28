@@ -1,0 +1,76 @@
+# RIPE Atlas anchors: the well-connected measurement servers of the RIPE Atlas network.
+# Source: RIPE Atlas REST API v2 (https://atlas.ripe.net/docs/apis/rest-api-manual/), keyless
+# for public probe metadata. Anchors that are "Written Off" or "Abandoned" are filtered out, so
+# the layer shows live ones (Connected) and ones that dropped off (Disconnected) - a cluster of
+# disconnected anchors is a hint of a regional network problem.
+schema_version: 1
+name: ripe_atlas_anchors
+source_type: ripe_atlas
+layer_type: ripe_atlas_anchors
+display_name: 'RIPE Atlas anchors'
+enabled: true
+
+layer:
+  id: ripe_atlas_anchors
+  name: RIPE Atlas anchors
+  group: Cyber
+  description: Internet measurement anchors, coloured by connection status
+
+display:
+  icon: antenna
+  color: '#00e676'
+  color_by:
+    field: metadata.status
+    map: { Connected: '#00e676', Disconnected: '#ff1744' }
+    default: '#9e9e9e'
+  size: 0.8
+  ttl: '2d'
+  fields:
+    - { path: metadata.status, label: Status }
+    - { path: metadata.status_since, label: Status since, format: datetime }
+    - { path: metadata.asn_v4, label: ASN (IPv4), prefix: 'AS' }
+    - { path: metadata.country_code, label: Country }
+    - { path: metadata.atlas_url, label: RIPE Atlas, format: link }
+
+transport:
+  type: http_poll
+  url: 'https://atlas.ripe.net/api/v2/probes/?is_anchor=true&fields=id,description,country_code,asn_v4,geometry,status,last_connected'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '30m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+  # ~1,800 anchors in total (most historic), 500 per page.
+  pagination: { type: page, param: page, start: 1, size_param: page_size, size: 500, max_pages: 6 }
+
+parser:
+  format: json
+  records_path: 'results'
+  max_records: 3000
+
+filter:
+  # status.id: 1 Connected, 2 Disconnected, 3 Abandoned, 4 Written Off.
+  - expr: 'status.id == 1 || status.id == 2'
+
+entity:
+  external_id: 'id'
+  name: '=coalesce(description, concat("Anchor ", id))'
+  metadata:
+    status: 'status.name'
+    status_since: 'status.since'
+    asn_v4: 'asn_v4'
+    country_code: 'country_code'
+    atlas_url: "=concat('https://atlas.ripe.net/probes/', id)"
+
+observation:
+  latitude: 'geometry.coordinates[1]'
+  longitude: 'geometry.coordinates[0]'
+  timestamp: 'last_connected'
+
+recording:
+  mode: upsert

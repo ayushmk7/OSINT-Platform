@@ -1,0 +1,66 @@
+# Public EV charging locations. Source: Open Charge Map API v3 `GET /v3/poi`
+# (https://openchargemap.org/site/develop/api). Needs a free API key in OCM_API_KEY.
+# Without a location filter the API returns the first `maxresults` sites; add
+# `&countrycode=XX` (or latitude/longitude/distance) to the URL to focus on an area.
+schema_version: 1
+name: openchargemap_ev_chargers
+source_type: openchargemap
+layer_type: ev_chargers
+display_name: 'EV chargers (Open Charge Map)'
+enabled: true
+
+layer:
+  id: ev_chargers
+  name: EV chargers
+  group: Infrastructure
+  description: Open Charge Map sites, coloured by number of charge points
+
+display:
+  icon: power
+  color: '#00e676'
+  color_by:
+    field: metadata.points
+    stops: [[1, '#b9f6ca'], [4, '#00e676'], [10, '#00c853'], [30, '#1b5e20']]
+    default: '#9e9e9e'
+  size: 0.6
+  fields:
+    - { path: metadata.points, label: Charge points, format: number, precision: 0 }
+    - { path: metadata.max_kw, label: Max power, format: number, precision: 0, suffix: ' kW' }
+    - { path: metadata.town, label: Town }
+    - { path: metadata.ocm_url, label: Open Charge Map, format: link }
+
+transport:
+  type: http_poll
+  url: 'https://api.openchargemap.io/v3/poi?output=json&maxresults=3000&compact=true&verbose=false'
+  method: GET
+  auth: { type: api_key, in: header, name: X-API-Key, value: '${OCM_API_KEY}' }
+  headers:
+    Accept: 'application/json'
+  timeout: '60s'
+  interval: '24h'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '30s'
+    max_delay: '5m'
+
+parser:
+  format: json
+  max_records: 3000
+
+entity:
+  external_id: 'ID'
+  name: '=coalesce(AddressInfo.Title, ID)'
+  metadata:
+    points: 'NumberOfPoints'
+    max_kw: '=max(Connections[0].PowerKW ?? 0, Connections[1].PowerKW ?? 0, Connections[2].PowerKW ?? 0)'
+    town: 'AddressInfo.Town'
+    ocm_url: "=concat('https://map.openchargemap.io/?id=', ID)"
+
+observation:
+  latitude: 'AddressInfo.Latitude'
+  longitude: 'AddressInfo.Longitude'
+  timestamp: 'DateLastStatusUpdate'
+
+recording:
+  mode: upsert

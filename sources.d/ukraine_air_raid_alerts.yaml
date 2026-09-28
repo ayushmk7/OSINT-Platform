@@ -1,0 +1,70 @@
+# Air-raid alert state for every Ukrainian oblast (plus Kyiv city and Sevastopol).
+# Source: ubilling.net.ua aerial alerts API (https://ubilling.net.ua/aerialalerts/), a keyless
+# JSON mirror of the official alert channel, cached for ~1 minute. One point per region at
+# its Wikidata centroid (lookups/s3_ua_oblast_centroids.json, keyed by the Ukrainian name).
+# For raion-level detail use ukraine_alerts_in_ua.yaml (needs a token).
+schema_version: 1
+name: ukraine_air_raid_alerts
+source_type: ubilling_aerialalerts
+layer_type: ukraine_air_raid_alerts
+display_name: 'Ukraine air-raid alerts'
+enabled: true
+
+lookups:
+  ua_regions: lookups/s3_ua_oblast_centroids.json
+
+layer:
+  id: ukraine_air_raid_alerts
+  name: Ukraine air-raid alerts
+  group: Conflict
+  description: Oblast-level air-raid alert state (red = alert now)
+
+display:
+  icon: alert
+  color: '#ff1744'
+  color_by:
+    field: metadata.alert_now
+    map: { 'true': '#ff1744', 'false': '#00c853' }
+  size: 1.2
+  ttl: '30m'
+  fields:
+    - { path: metadata.alert_now, label: Alert now, format: bool }
+    - { path: metadata.region_en, label: Region }
+    - { path: metadata.changed, label: State changed }
+
+transport:
+  type: http_poll
+  url: 'https://ubilling.net.ua/aerialalerts/'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '90s'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '30s'
+
+parser:
+  format: json
+  records_path: 'states'
+  object_to_records: true
+  key_field: region
+  max_records: 100
+
+entity:
+  external_id: 'region'
+  name: "=coalesce(lookup('ua_regions', region).name_en, region)"
+  metadata:
+    alert_now: 'alertnow'
+    region_en: "=lookup('ua_regions', region).name_en"
+    # Kyiv local time as published; 1970-01-01 means "unknown".
+    changed: "=changed == '1970-01-01 03:00:00' ? null : changed"
+
+observation:
+  latitude: "=lookup('ua_regions', region).lat"
+  longitude: "=lookup('ua_regions', region).lon"
+
+recording:
+  mode: upsert

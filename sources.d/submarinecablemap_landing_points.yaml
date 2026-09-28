@@ -1,0 +1,58 @@
+# Submarine cable landing stations.
+# Source: TeleGeography Submarine Cable Map public GeoJSON
+# (https://www.submarinecablemap.com/). The file is the same one the public map loads.
+schema_version: 1
+name: submarinecablemap_landing_points
+source_type: submarinecablemap
+layer_type: cable_landing_points
+display_name: 'Submarine cable landings'
+enabled: true
+
+layer:
+  id: cable_landing_points
+  name: Cable landing points
+  group: Cyber
+  description: TeleGeography submarine cable landing stations
+
+display:
+  icon: cable
+  color: '#18ffff'
+  color_by:
+    field: metadata.is_tbd
+    map: { 'true': '#ffab40', 'false': '#18ffff' }
+  size: 0.7
+  fields:
+    - { path: metadata.is_tbd, label: Location TBD, format: bool }
+    - { path: metadata.map_url, label: Cable map, format: link }
+
+transport:
+  type: http_poll
+  url: 'https://www.submarinecablemap.com/api/v3/landing-point/landing-point-geo.json'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '24h'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '10s'
+    max_delay: '2m'
+
+parser:
+  format: geojson
+  max_records: 3000
+
+entity:
+  external_id: 'properties.id'
+  name: 'properties.name'
+  metadata:
+    is_tbd: 'properties.is_tbd'
+    map_url: "=concat('https://www.submarinecablemap.com/landing-point/', properties.id)"
+
+observation:
+  latitude: 'geometry.coordinates[1]'
+  longitude: 'geometry.coordinates[0]'
+
+recording:
+  mode: upsert

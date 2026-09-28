@@ -1,0 +1,65 @@
+schema_version: 1
+name: ingv_italy_quakes
+source_type: fdsn_event
+layer_type: earthquakes_ingv
+display_name: 'INGV Italy Earthquakes'
+enabled: true
+
+layer:
+  id: earthquakes_ingv
+  name: Italy earthquakes
+  group: Hazards
+  description: INGV, M1+, past day (Italy and large global events)
+
+display:
+  icon: quake
+  color: '#06d6a0'
+  color_by:
+    field: metadata.magnitude
+    stops: [[1, '#b7efc5'], [3.5, '#06d6a0'], [5, '#ef476f']]
+  size: 0.9
+  ttl: '3d'
+  fields:
+    - { path: metadata.magnitude, label: Magnitude, format: number, precision: 1 }
+    - { path: metadata.mag_type, label: Magnitude type }
+    - { path: metadata.depth, label: Depth, format: number, precision: 1, suffix: ' km' }
+    - { path: timestamp, label: Origin time, format: datetime }
+    - { path: metadata.url, label: Event page, format: link }
+
+transport:
+  type: http_poll
+  # FDSN event web service: https://webservices.ingv.it/swagger-ui/dist/?url=https://ingv.github.io/openapi/fdsnws/event/0.0.1/event.yaml
+  url: 'https://webservices.ingv.it/fdsnws/event/1/query?format=geojson&minmag=1&orderby=time&limit=200'
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '10m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '2s'
+    max_delay: '30s'
+
+parser:
+  format: geojson
+  max_records: 200
+
+entity:
+  external_id: 'properties.eventId'
+  name: 'properties.place'
+  metadata:
+    magnitude: 'properties.mag'
+    mag_type: 'properties.magType'
+    depth: 'geometry.coordinates[2]'
+    url: "=concat('https://terremoti.ingv.it/event/', properties.eventId)"
+
+observation:
+  latitude: 'geometry.coordinates[1]'
+  longitude: 'geometry.coordinates[0]'
+  altitude: 'geometry.coordinates[2]'
+  timestamp: "=concat(properties.time, 'Z')" # UTC without a zone designator
+  scale:
+    altitude: -1000
+
+recording:
+  mode: upsert

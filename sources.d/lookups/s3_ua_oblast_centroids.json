@@ -1,0 +1,137 @@
+{
+  "Івано-Франківська область": {
+    "lat": 48.6582,
+    "lon": 24.5048,
+    "name_en": "Ivano-Frankivsk Oblast"
+  },
+  "Автономна Республіка Крим": {
+    "lat": 44.9333,
+    "lon": 34.1,
+    "name_en": "Autonomous Republic of Crimea"
+  },
+  "Волинська область": {
+    "lat": 50.7414,
+    "lon": 25.3539,
+    "name_en": "Volyn Oblast"
+  },
+  "Вінницька область": {
+    "lat": 48.9333,
+    "lon": 28.6833,
+    "name_en": "Vinnytsia Oblast"
+  },
+  "Дніпропетровська область": {
+    "lat": 48.39,
+    "lon": 34.71,
+    "name_en": "Dnipropetrovsk Oblast"
+  },
+  "Донецька область": {
+    "lat": 48.14,
+    "lon": 37.74,
+    "name_en": "Donetsk Oblast"
+  },
+  "Житомирська область": {
+    "lat": 50.65,
+    "lon": 28.52,
+    "name_en": "Zhytomyr Oblast"
+  },
+  "Закарпатська область": {
+    "lat": 48.41,
+    "lon": 23.29,
+    "name_en": "Zakarpattia Oblast"
+  },
+  "Запорізька область": {
+    "lat": 47.8333,
+    "lon": 35.1667,
+    "name_en": "Zaporizhzhia Oblast"
+  },
+  "Київська область": {
+    "lat": 50.25,
+    "lon": 30.5,
+    "name_en": "Kyiv Oblast"
+  },
+  "Кіровоградська область": {
+    "lat": 48.46,
+    "lon": 32.27,
+    "name_en": "Kirovohrad Oblast"
+  },
+  "Луганська область": {
+    "lat": 48.92,
+    "lon": 39.02,
+    "name_en": "Luhansk Oblast"
+  },
+  "Львівська область": {
+    "lat": 49.7175,
+    "lon": 23.95,
+    "name_en": "Lviv Oblast"
+  },
+  "Миколаївська область": {
+    "lat": 47.43,
+    "lon": 31.8,
+    "name_en": "Mykolaiv Oblast"
+  },
+  "Одеська область": {
+    "lat": 47.0,
+    "lon": 30.0,
+    "name_en": "Odesa Oblast"
+  },
+  "Полтавська область": {
+    "lat": 49.5894,
+    "lon": 34.5514,
+    "name_en": "Poltava Oblast"
+  },
+  "Рівненська область": {
+    "lat": 50.74,
+    "lon": 26.35,
+    "name_en": "Rivne Oblast"
+  },
+  "Севастополь": {
+    "lat": 44.605,
+    "lon": 33.5225,
+    "name_en": "Sevastopol"
+  },
+  "Сумська область": {
+    "lat": 51.0,
+    "lon": 34.0,
+    "name_en": "Sumy Oblast"
+  },
+  "Тернопільська область": {
+    "lat": 49.5558,
+    "lon": 25.5925,
+    "name_en": "Ternopil Oblast"
+  },
+  "Харківська область": {
+    "lat": 49.59,
+    "lon": 36.43,
+    "name_en": "Kharkiv Oblast"
+  },
+  "Херсонська область": {
+    "lat": 46.5,
+    "lon": 34.0,
+    "name_en": "Kherson Oblast"
+  },
+  "Хмельницька область": {
+    "lat": 49.53,
+    "lon": 26.87,
+    "name_en": "Khmelnytskyi Oblast"
+  },
+  "Черкаська область": {
+    "lat": 49.4447,
+    "lon": 32.0603,
+    "name_en": "Cherkasy Oblast"
+  },
+  "Чернівецька область": {
+    "lat": 48.28,
+    "lon": 26.01,
+    "name_en": "Chernivtsi Oblast"
+  },
+  "Чернігівська область": {
+    "lat": 51.34,
+    "lon": 32.06,
+    "name_en": "Chernihiv Oblast"
+  },
+  "м. Київ": {
+    "lat": 50.45,
+    "lon": 30.5236,
+    "name_en": "Kyiv"
+  }
+}

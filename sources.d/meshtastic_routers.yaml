@@ -1,0 +1,82 @@
+# Meshtastic LoRa mesh infrastructure nodes (routers and base stations) seen on the public
+# MQTT map. Source: meshmap.net (https://meshmap.net/), keyless JSON keyed by node number.
+# Positions are integers in 1e-7 degrees and are deliberately imprecise (node owners choose
+# a precision). Only ROUTER* and CLIENT_BASE roles are kept (~2,800 of ~10,000 nodes);
+# `max_records` covers the whole map because it caps records before the filter.
+schema_version: 1
+name: meshtastic_routers
+source_type: meshmap
+layer_type: meshtastic_nodes
+display_name: 'Meshtastic routers'
+enabled: true
+
+layer:
+  id: meshtastic_nodes
+  name: Meshtastic routers
+  group: Other
+  description: Public LoRa mesh routers and base stations (meshmap.net)
+
+display:
+  icon: antenna
+  color: '#69f0ae'
+  color_by:
+    field: metadata.role
+    map:
+      {
+        ROUTER: '#69f0ae',
+        ROUTER_LATE: '#b2ff59',
+        ROUTER_CLIENT: '#eeff41',
+        CLIENT_BASE: '#40c4ff'
+      }
+  size: 0.6
+  ttl: '2d'
+  fields:
+    - { path: metadata.short_name, label: Short name }
+    - { path: metadata.role, label: Role }
+    - { path: metadata.hw_model, label: Hardware }
+    - { path: metadata.battery, label: Battery, format: number, precision: 0, suffix: ' %' }
+    - { path: metadata.ch_util, label: Channel util., format: number, precision: 1, suffix: ' %' }
+    - { path: timestamp, label: Last seen, format: datetime }
+
+transport:
+  type: http_poll
+  url: 'https://meshmap.net/nodes.json'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '60s'
+  interval: '30m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '10s'
+    max_delay: '2m'
+
+parser:
+  format: json
+  object_to_records: true
+  key_field: node_num
+  max_records: 20000
+
+filter:
+  - field: 'role'
+    in: ['ROUTER', 'ROUTER_LATE', 'ROUTER_CLIENT', 'CLIENT_BASE']
+
+entity:
+  external_id: 'node_num'
+  name: '=coalesce(trim(longName), shortName, node_num)'
+  metadata:
+    short_name: 'shortName'
+    role: 'role'
+    hw_model: 'hwModel'
+    battery: 'batteryLevel'
+    ch_util: 'chUtil'
+
+observation:
+  latitude: '=latitude / 10000000'
+  longitude: '=longitude / 10000000'
+  altitude: 'altitude'
+  timestamp: '=coalesce(lastMapReport, lastDeviceMetrics)'
+
+recording:
+  mode: upsert

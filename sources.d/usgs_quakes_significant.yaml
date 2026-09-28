@@ -1,0 +1,70 @@
+schema_version: 1
+name: usgs_quakes_significant
+source_type: usgs_earthquakes
+layer_type: earthquakes_significant
+display_name: 'USGS Significant Earthquakes'
+enabled: true
+
+layer:
+  id: earthquakes_significant
+  name: Significant earthquakes
+  group: Hazards
+  description: USGS significant events, past 30 days
+
+display:
+  icon: quake
+  color: '#ff0054'
+  color_by:
+    field: metadata.magnitude
+    stops: [[4, '#ff9e00'], [6, '#ff3b3b'], [7.5, '#c9184a']]
+  size: 1.4
+  ttl: '30d'
+  fields:
+    - { path: metadata.magnitude, label: Magnitude, format: number, precision: 1 }
+    - { path: metadata.depth, label: Depth, format: number, precision: 1, suffix: ' km' }
+    - { path: metadata.alert, label: PAGER alert }
+    - { path: metadata.tsunami, label: Tsunami flag, format: bool }
+    - { path: metadata.felt, label: Felt reports, format: number, precision: 0 }
+    - { path: timestamp, label: Origin time, format: datetime }
+    - { path: metadata.url, label: Event page, format: link }
+
+transport:
+  type: http_poll
+  # https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php (feed refreshes every 15 min)
+  url: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_month.geojson'
+  headers:
+    Accept: 'application/json'
+  timeout: '15s'
+  interval: '15m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '2s'
+    max_delay: '30s'
+
+parser:
+  format: geojson
+  max_records: 500
+
+entity:
+  external_id: 'id'
+  name: "=concat('M', round(properties.mag, 1), ' ', properties.place)"
+  metadata:
+    magnitude: 'properties.mag'
+    depth: 'geometry.coordinates[2]'
+    alert: 'properties.alert'
+    tsunami: '=properties.tsunami == 1'
+    felt: 'properties.felt'
+    significance: 'properties.sig'
+    url: 'properties.url'
+
+observation:
+  latitude: 'geometry.coordinates[1]'
+  longitude: 'geometry.coordinates[0]'
+  altitude: 'geometry.coordinates[2]'
+  timestamp: 'properties.time'
+  scale:
+    altitude: -1000 # km positive-down -> metres below the surface
+
+recording:
+  mode: upsert

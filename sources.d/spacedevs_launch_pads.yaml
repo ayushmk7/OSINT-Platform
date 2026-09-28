@@ -1,0 +1,53 @@
+schema_version: 1
+name: spacedevs_launch_pads
+source_type: spacedevs
+layer_type: space
+display_name: 'Active launch pads (The Space Devs)'
+enabled: true
+
+layer:
+  id: launch_pads
+  name: Launch pads
+  group: Space
+  description: Active orbital and suborbital launch pads, Launch Library 2
+
+display:
+  icon: tower
+  color: '#ce93d8'
+  size: 0.8
+  fields:
+    - { path: metadata.location, label: Site }
+    - { path: metadata.country, label: Country }
+    - { path: metadata.launches, label: Launches, format: number, precision: 0 }
+    - { path: metadata.wiki, label: Wikipedia, format: link }
+
+transport:
+  type: http_poll
+  url: 'https://ll.thespacedevs.com/2.3.0/pads/?active=true&limit=100'
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '7d'
+  pagination: { type: offset, param: offset, start: 0, size: 100, max_pages: 3 }
+  retry: { max_attempts: 2, backoff: fixed, initial_delay: '60s', max_delay: '60s' }
+
+parser:
+  format: json
+  records_path: 'results'
+  max_records: 300
+
+entity:
+  external_id: 'id'
+  name: '=concat(name, " (", location.name, ")")'
+  metadata:
+    location: 'location.name'
+    country: 'country.name'
+    launches: 'total_launch_count'
+    wiki: 'wiki_url'
+
+observation:
+  latitude: 'latitude'
+  longitude: 'longitude'
+
+recording:
+  mode: upsert

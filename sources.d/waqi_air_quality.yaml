@@ -1,0 +1,72 @@
+schema_version: 1
+name: waqi_air_quality
+source_type: waqi
+layer_type: air_quality_index
+display_name: 'World Air Quality Index (WAQI)'
+enabled: true
+
+layer:
+  id: air_quality_index
+  name: Air quality index (WAQI)
+  group: Environment
+  description: World Air Quality Index Project stations, worldwide US-EPA AQI (needs WAQI_TOKEN)
+
+display:
+  icon: dot
+  color: '#2a9d8f'
+  # US EPA AQI categories.
+  color_by:
+    field: metadata.aqi
+    stops:
+      [
+        [0, '#00e400'],
+        [50, '#ffff00'],
+        [100, '#ff7e00'],
+        [150, '#ff0000'],
+        [200, '#8f3f97'],
+        [300, '#7e0023']
+      ]
+  size: 0.7
+  ttl: '6h'
+  fields:
+    - { path: metadata.aqi, label: AQI, format: number, precision: 0 }
+    - { path: timestamp, label: Updated, format: datetime }
+    - { path: metadata.url, label: Station page, format: link }
+
+transport:
+  type: http_poll
+  # WAQI JSON API: https://aqicn.org/json-api/doc/ (map/bounds; free token from https://aqicn.org/data-platform/token/)
+  url: 'https://api.waqi.info/v2/map/bounds?latlng=-85,-180,85,180&networks=all&token=${WAQI_TOKEN}'
+  headers:
+    Accept: 'application/json'
+  timeout: '60s'
+  interval: '30m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: json
+  records_path: 'data'
+  max_records: 2000
+
+filter:
+  # "-" means no current reading.
+  - expr: 'number(aqi) != null'
+
+entity:
+  external_id: 'uid'
+  name: 'station.name'
+  metadata:
+    aqi: '=number(aqi)'
+    url: "=concat('https://aqicn.org/station/@', uid)"
+
+observation:
+  latitude: 'lat'
+  longitude: 'lon'
+  timestamp: 'station.time'
+
+recording:
+  mode: upsert

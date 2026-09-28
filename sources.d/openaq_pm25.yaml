@@ -1,0 +1,70 @@
+schema_version: 1
+name: openaq_pm25
+source_type: openaq_v3
+layer_type: air_quality_openaq
+display_name: 'OpenAQ PM2.5 (latest)'
+enabled: true
+
+layer:
+  id: air_quality_openaq
+  name: PM2.5 monitors (OpenAQ)
+  group: Environment
+  description: OpenAQ v3 latest PM2.5 readings from reference and low-cost monitors (needs OPENAQ_API_KEY)
+
+display:
+  icon: dot
+  color: '#40916c'
+  # PM2.5 µg/m³, roughly the US EPA AQI breakpoints.
+  color_by:
+    field: metadata.pm25
+    stops: [[0, '#52b788'], [12, '#ffd60a'], [35, '#ff9e00'], [55, '#e5383b'], [150, '#7b2cbf']]
+  size: 0.7
+  ttl: '6h'
+  fields:
+    - { path: metadata.pm25, label: PM2.5, format: number, precision: 1, suffix: ' µg/m³' }
+    - { path: metadata.location_id, label: OpenAQ location }
+    - { path: timestamp, label: Measured, format: datetime }
+    - { path: metadata.url, label: Explorer, format: link }
+
+transport:
+  type: http_poll
+  # OpenAQ v3: https://docs.openaq.org/ (parameter 2 = pm25; free key, 60 requests/min)
+  url: 'https://api.openaq.org/v3/parameters/2/latest'
+  auth: { type: api_key, in: header, name: X-API-Key, value: '${OPENAQ_API_KEY}' }
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '30m'
+  pagination: { type: page, param: page, start: 1, size_param: limit, size: 1000, max_pages: 2 }
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: json
+  records_path: 'results'
+  max_records: 2000
+
+filter:
+  # Negative values are sensor errors.
+  - expr: 'value >= 0'
+  # Drop monitors that have not reported for more than a day.
+  - expr: 'unix_ms(datetime.utc) > now() - 86400000'
+
+entity:
+  external_id: 'sensorsId'
+  name: "=concat('OpenAQ location ', locationsId)"
+  metadata:
+    pm25: 'value'
+    location_id: 'locationsId'
+    url: "=concat('https://explore.openaq.org/locations/', locationsId)"
+
+observation:
+  latitude: 'coordinates.latitude'
+  longitude: 'coordinates.longitude'
+  timestamp: 'datetime.utc'
+
+recording:
+  mode: upsert

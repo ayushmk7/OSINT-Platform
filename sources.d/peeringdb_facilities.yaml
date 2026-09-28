@@ -1,0 +1,75 @@
+# PeeringDB colocation facilities (carrier-neutral data centres where networks interconnect).
+# Source: PeeringDB API (https://www.peeringdb.com/apidocs/), keyless for public records;
+# anonymous clients are rate limited, so this polls once a day in a single request.
+# `net_count__gte=3` keeps facilities with at least three networks present (~2,500 sites).
+schema_version: 1
+name: peeringdb_facilities
+source_type: peeringdb
+layer_type: peeringdb_facilities
+display_name: 'PeeringDB facilities'
+enabled: true
+
+layer:
+  id: peeringdb_facilities
+  name: Interconnection facilities
+  group: Cyber
+  description: PeeringDB colocation sites with 3+ networks, coloured by network count
+
+display:
+  icon: tower
+  color: '#40c4ff'
+  color_by:
+    field: metadata.net_count
+    stops: [[3, '#80d8ff'], [50, '#40c4ff'], [200, '#2979ff'], [500, '#d500f9']]
+  size: 0.8
+  fields:
+    - { path: metadata.org_name, label: Operator }
+    - { path: metadata.net_count, label: Networks, format: number, precision: 0 }
+    - { path: metadata.ix_count, label: Exchanges, format: number, precision: 0 }
+    - { path: metadata.city, label: City }
+    - { path: metadata.country, label: Country }
+    - { path: metadata.peeringdb_url, label: PeeringDB, format: link }
+
+transport:
+  type: http_poll
+  url: 'https://www.peeringdb.com/api/fac?status=ok&net_count__gte=3&depth=0&fields=id,name,org_name,city,country,latitude,longitude,net_count,ix_count,carrier_count,updated'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '60s'
+  interval: '24h'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '30s'
+    max_delay: '5m'
+
+parser:
+  format: json
+  records_path: 'data'
+  max_records: 3000
+
+# ~7% of facilities have no geocode yet; exclude them instead of counting them as malformed.
+filter:
+  - field: 'latitude'
+    not_empty: true
+
+entity:
+  external_id: 'id'
+  name: 'name'
+  metadata:
+    org_name: 'org_name'
+    net_count: 'net_count'
+    ix_count: 'ix_count'
+    carrier_count: 'carrier_count'
+    city: 'city'
+    country: 'country'
+    peeringdb_url: "=concat('https://www.peeringdb.com/fac/', id)"
+
+observation:
+  latitude: 'latitude'
+  longitude: 'longitude'
+  timestamp: 'updated'
+
+recording:
+  mode: upsert

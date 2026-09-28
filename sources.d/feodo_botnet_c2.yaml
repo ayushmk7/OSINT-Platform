@@ -1,0 +1,77 @@
+# Botnet command-and-control servers tracked by abuse.ch Feodo Tracker (Dridex, Emotet,
+# QakBot, Pikabot and friends). Source: https://feodotracker.abuse.ch/ recommended IP
+# blocklist, keyless JSON (CC0). The list carries a country code, not a position: each C2 is
+# drawn at its country's Wikidata centroid (lookups/s3_country_centroids.csv), so treat the
+# marker as "hosted in this country", not a street address.
+schema_version: 1
+name: feodo_botnet_c2
+source_type: abusech_feodo
+layer_type: botnet_c2
+display_name: 'Botnet C2 servers (Feodo Tracker)'
+enabled: true
+
+lookups:
+  countries: lookups/s3_country_centroids.csv
+
+layer:
+  id: botnet_c2
+  name: Botnet C2 servers
+  group: Cyber
+  description: abuse.ch Feodo Tracker C2s, placed at country centroid
+
+display:
+  icon: bug
+  color: '#d500f9'
+  color_by:
+    field: metadata.status
+    map: { online: '#ff1744', offline: '#9e9e9e' }
+  size: 0.9
+  fields:
+    - { path: metadata.malware, label: Malware }
+    - { path: metadata.ip, label: IP }
+    - { path: metadata.port, label: Port }
+    - { path: metadata.status, label: Status }
+    - { path: metadata.as_name, label: AS }
+    - { path: metadata.country, label: Country }
+    - { path: metadata.first_seen, label: First seen }
+    - { path: metadata.last_online, label: Last online }
+
+transport:
+  type: http_poll
+  url: 'https://feodotracker.abuse.ch/downloads/ipblocklist.json'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  # abuse.ch regenerates the list every 5 minutes; hourly is plenty.
+  interval: '1h'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '10s'
+    max_delay: '2m'
+
+parser:
+  format: json
+  max_records: 3000
+
+entity:
+  external_id: '=concat(ip_address, ":", port)'
+  name: '=concat(malware, " C2 ", ip_address)'
+  metadata:
+    malware: 'malware'
+    ip: 'ip_address'
+    port: 'port'
+    status: 'status'
+    as_name: '=concat("AS", as_number, " ", as_name)'
+    country: "=coalesce(lookup('countries', country).name, country)"
+    first_seen: 'first_seen'
+    last_online: 'last_online'
+
+observation:
+  latitude: "=number(lookup('countries', country).lat)"
+  longitude: "=number(lookup('countries', country).lon)"
+  timestamp: 'last_online'
+
+recording:
+  mode: upsert

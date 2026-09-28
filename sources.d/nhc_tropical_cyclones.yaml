@@ -1,0 +1,83 @@
+schema_version: 1
+name: nhc_tropical_cyclones
+source_type: noaa_nhc
+layer_type: tropical_cyclones
+display_name: 'NHC Active Tropical Cyclones'
+enabled: true
+
+layer:
+  id: tropical_cyclones
+  name: Tropical cyclones
+  group: Weather
+  description: NOAA NHC / CPHC active storms (Atlantic, East and Central Pacific)
+
+display:
+  icon: storm
+  color: '#9b5de5'
+  # Maximum sustained wind, knots (Saffir-Simpson: 64 kt = cat 1, 96 kt = cat 3, 137 kt = cat 5).
+  color_by:
+    field: metadata.wind_kt
+    stops: [[25, '#48cae4'], [34, '#ffd60a'], [64, '#ff9e00'], [96, '#e5383b'], [137, '#9d0208']]
+  size: 1.6
+  trail: { enabled: true, max_points: 60 }
+  ttl: '12h'
+  fields:
+    - { path: metadata.classification, label: Classification }
+    - { path: metadata.wind_kt, label: Max wind, format: number, precision: 0, suffix: ' kt' }
+    - { path: metadata.pressure_mb, label: Pressure, format: number, precision: 0, suffix: ' mb' }
+    - { path: metadata.movement, label: Movement }
+    - { path: timestamp, label: Advisory time, format: datetime }
+    - { path: metadata.advisory_url, label: Public advisory, format: link }
+
+transport:
+  type: http_poll
+  # https://www.nhc.noaa.gov/CurrentStorms.json (advisories every 6 h, intermediates every 3 h)
+  url: 'https://www.nhc.noaa.gov/CurrentStorms.json'
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '15m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: json
+  records_path: 'activeStorms'
+  max_records: 50
+
+entity:
+  external_id: 'id'
+  name: "=concat(lookup('classes', classification, classification), ' ', name)"
+  metadata:
+    classification: "=lookup('classes', classification, classification)"
+    wind_kt: '=number(intensity)'
+    pressure_mb: '=number(pressure)'
+    movement: "=concat(movementDir, '° at ', movementSpeed, ' mph')"
+    advisory_url: 'publicAdvisory.url'
+
+observation:
+  latitude: 'latitudeNumeric'
+  longitude: 'longitudeNumeric'
+  speed: 'movementSpeed'
+  heading: 'movementDir'
+  timestamp: 'lastUpdate'
+  scale:
+    speed: 0.44704 # mph -> m/s
+
+lookups:
+  classes:
+    TD: Tropical Depression
+    TS: Tropical Storm
+    HU: Hurricane
+    STD: Subtropical Depression
+    STS: Subtropical Storm
+    PTC: Post-tropical Cyclone
+    PC: Potential Tropical Cyclone
+    TY: Typhoon
+
+# One row per advisory time: the track builds up over the storm's life.
+recording:
+  mode: append

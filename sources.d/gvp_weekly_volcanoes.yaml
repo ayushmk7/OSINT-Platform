@@ -1,0 +1,55 @@
+schema_version: 1
+name: gvp_weekly_volcanoes
+source_type: smithsonian_gvp
+layer_type: volcanoes_weekly
+display_name: 'Smithsonian/USGS Weekly Volcanic Activity'
+enabled: true
+
+layer:
+  id: volcanoes_weekly
+  name: Weekly volcanic activity
+  group: Hazards
+  description: Smithsonian GVP / USGS Weekly Volcanic Activity Report (worldwide)
+
+display:
+  icon: volcano
+  color: '#ff5d8f'
+  size: 1.1
+  ttl: '21d'
+  fields:
+    - { path: metadata.summary, label: Report }
+    - { path: timestamp, label: Published, format: datetime }
+    - { path: metadata.url, label: Weekly report, format: link }
+
+transport:
+  type: http_poll
+  # GeoRSS feed: https://volcano.si.edu/reports_weekly.cfm (published once a week)
+  url: 'https://volcano.si.edu/news/WeeklyVolcanoRSS.xml'
+  timeout: '30s'
+  interval: '6h'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: rss
+  max_records: 100
+
+entity:
+  external_id: 'guid'
+  # "Krakatau (Indonesia) - Report for ... - New Eruptive Activity"
+  name: 'title'
+  metadata:
+    summary: 'description'
+    url: 'link'
+
+observation:
+  latitude: 'lat'
+  longitude: 'lon'
+  timestamp: 'published'
+  optional: true
+
+recording:
+  mode: upsert

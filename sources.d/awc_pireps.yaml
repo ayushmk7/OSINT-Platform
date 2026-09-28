@@ -1,0 +1,71 @@
+schema_version: 1
+name: awc_pireps
+source_type: aviationweather
+layer_type: aviation
+display_name: 'Pilot reports (AWC PIREPs / AIREPs)'
+enabled: true
+
+layer:
+  id: pireps
+  name: Pilot reports
+  group: Aviation
+  description: PIREPs and AIREPs from the last 2 hours, aviationweather.gov
+
+display:
+  icon: pin
+  color: '#69f0ae'
+  # Turbulence reports stand out; plain position/wind AIREPs stay green.
+  color_by:
+    field: metadata.turbulence
+    map:
+      { LGT: '#ffe57f', 'LGT-MOD': '#ffd740', MOD: '#ffab40', 'MOD-SEV': '#ff6e40', SEV: '#ff1744' }
+  size: 0.8
+  ttl: '2h'
+  fields:
+    - { path: metadata.report_type, label: Type }
+    - { path: metadata.aircraft, label: Aircraft }
+    - { path: metadata.flight_level, label: Flight level, prefix: 'FL' }
+    - { path: metadata.turbulence, label: Turbulence }
+    - { path: metadata.icing, label: Icing }
+    - { path: metadata.temp_c, label: Temperature, format: number, precision: 0, suffix: ' °C' }
+    - { path: metadata.wind, label: Wind }
+    - { path: metadata.raw, label: Raw report }
+    - { path: timestamp, label: Observed, format: datetime }
+
+transport:
+  type: http_poll
+  # A bbox is mandatory for a network-wide query; this one is the whole globe.
+  url: 'https://aviationweather.gov/api/data/pirep?format=json&age=2&bbox=-90,-180,90,180'
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '5m'
+  retry: { max_attempts: 3, backoff: exponential, initial_delay: '2s', max_delay: '15s' }
+
+parser:
+  format: json
+  max_records: 3000
+
+entity:
+  external_id: '=concat(obsTime, "-", acType, "-", lat, "-", lon)'
+  name: '=concat(pirepType, " ", acType, " FL", fltLvl)'
+  metadata:
+    report_type: 'pirepType'
+    aircraft: 'acType'
+    flight_level: 'fltLvl'
+    turbulence: '=coalesce(tbInt1)'
+    icing: '=coalesce(icgInt1)'
+    temp_c: 'temp'
+    wind: '=wspd == null ? null : concat(wdir, "° / ", wspd, " kt")'
+    raw: 'rawOb'
+
+observation:
+  latitude: 'lat'
+  longitude: 'lon'
+  altitude: '=number(fltLvl) * 100'
+  timestamp: 'obsTime'
+  scale:
+    altitude: 0.3048 # flight level (hundreds of feet) -> metres
+
+recording:
+  mode: upsert

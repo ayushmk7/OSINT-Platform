@@ -1,0 +1,90 @@
+# Active military installations: items that are directly an airbase, military base, naval base, RAF
+# station, garrison, outpost, naval air station, submarine base, missile base, ... (explicit class
+# list: walking the full military-base subclass tree is ~3x slower on WDQS). Barracks are left out.
+# Source: Wikidata Query Service (https://query.wikidata.org/, CC0). The query is POSTed as a
+# form so it stays readable here. WDQS asks clients for a descriptive User-Agent with contact
+# details: set MKOSINT_CONTACT to a URL or e-mail address (optional; a generic value is used
+# otherwise). Items are ordered by sitelink count so the most notable ones survive the LIMIT.
+schema_version: 1
+name: wikidata_military_installations
+source_type: wikidata_sparql
+layer_type: military_installations
+display_name: 'Military installations'
+enabled: true
+
+layer:
+  id: military_installations
+  name: Military installations
+  group: Conflict
+  description: 'Wikidata: airbases, military and naval bases (top 2000 by notability)'
+
+display:
+  icon: military
+  color: '#8bc34a'
+  color_by:
+    field: metadata.branch
+    map: { air: '#4fc3f7', naval: '#3f51b5', land: '#8bc34a' }
+  size: 0.9
+  # Reference data refreshed daily: no ttl.
+  fields:
+    - { path: metadata.branch, label: Branch }
+    - { path: metadata.operator, label: Operator }
+    - { path: metadata.country, label: Country }
+    - { path: metadata.kind, label: Type }
+    - { path: metadata.wikidata_url, label: Wikidata, format: link }
+
+transport:
+  type: http_poll
+  url: 'https://query.wikidata.org/sparql'
+  method: POST
+  content_type: application/x-www-form-urlencoded
+  headers:
+    Accept: 'application/sparql-results+json'
+    User-Agent: 'MK-OSINT/1.0 (${MKOSINT_CONTACT:-https://github.com/}) wikidata-layers'
+  body:
+    query: |
+      SELECT ?item (SAMPLE(?l) AS ?label) (SAMPLE(?la) AS ?lat) (SAMPLE(?lo) AS ?lon) (SAMPLE(?cl) AS ?country) (SAMPLE(?kl) AS ?kind) (MAX(?sl) AS ?sitelinks) (SAMPLE(?opl) AS ?operator)
+      WHERE {
+        VALUES ?k { wd:Q695850 wd:Q245016 wd:Q7373622 wd:Q1324633 wd:Q88556 wd:Q1321241 wd:Q6981985 wd:Q7619063 wd:Q2886620 wd:Q2604714 wd:Q331367 wd:Q1745026 wd:Q6646468 wd:Q1428515 wd:Q21193688 wd:Q71754457 }
+        ?item wdt:P31 ?k .
+        ?item p:P625/psv:P625 [ wikibase:geoLatitude ?la ; wikibase:geoLongitude ?lo ; wikibase:geoGlobe wd:Q2 ] .
+        ?item wikibase:sitelinks ?sl .
+        FILTER NOT EXISTS { ?item wdt:P576 [] } FILTER NOT EXISTS { ?item wdt:P3999 [] }
+        OPTIONAL { ?item rdfs:label ?l FILTER(lang(?l) = "en") }
+        OPTIONAL { ?k rdfs:label ?kl FILTER(lang(?kl) = "en") }
+        OPTIONAL { ?item wdt:P17 ?c . ?c rdfs:label ?cl FILTER(lang(?cl) = "en") }
+        OPTIONAL { ?item wdt:P137 ?op . ?op rdfs:label ?opl FILTER(lang(?opl) = "en") }
+      }
+      GROUP BY ?item
+      ORDER BY DESC(?sitelinks)
+      LIMIT 2000
+  timeout: '90s'
+  interval: '24h'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '30s'
+    max_delay: '5m'
+
+parser:
+  format: json
+  records_path: 'results.bindings'
+  max_records: 2000
+
+entity:
+  external_id: 'item.value'
+  name: '=coalesce(label.value, kind.value, item.value)'
+  metadata:
+    country: 'country.value'
+    kind: 'kind.value'
+    operator: 'operator.value'
+    branch: "=contains(kind.value, 'naval') || contains(kind.value, 'navy') ? 'naval' : (contains(kind.value, 'air') ? 'air' : 'land')"
+    wikidata_url: 'item.value'
+    sitelinks: '=number(sitelinks.value)'
+
+observation:
+  latitude: '=number(lat.value)'
+  longitude: '=number(lon.value)'
+
+recording:
+  mode: upsert

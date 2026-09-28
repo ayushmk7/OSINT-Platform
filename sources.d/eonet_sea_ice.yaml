@@ -1,0 +1,71 @@
+schema_version: 1
+name: eonet_sea_ice
+source_type: nasa_eonet
+layer_type: eonet_sea_ice
+display_name: 'Sea and lake ice (NASA EONET)'
+enabled: true
+
+layer:
+  id: eonet_sea_ice
+  name: Sea and lake ice
+  group: Environment
+  description: NASA EONET tracked icebergs and ice events
+
+display:
+  icon: dot
+  color: '#a8dadc'
+  size: 1.0
+  trail: { enabled: true, max_points: 100 }
+  ttl: '90d'
+  fields:
+    - { path: metadata.category, label: Category }
+    - { path: metadata.magnitude, label: Magnitude, format: number, precision: 1 }
+    - { path: metadata.magnitude_unit, label: Unit }
+    - { path: metadata.sources, label: Reported by }
+    - { path: timestamp, label: Last position, format: datetime }
+    - { path: metadata.url, label: EONET record, format: link }
+
+transport:
+  type: http_poll
+  # EONET v3: https://eonet.gsfc.nasa.gov/docs/v3 (one feature per event geometry, oldest first)
+  url: 'https://eonet.gsfc.nasa.gov/api/v3/events/geojson?status=open&category=seaLakeIce&days=60'
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '30m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: geojson
+  max_records: 2000
+
+# Each event also has one undated summary feature; keep only the dated positions.
+filter:
+  - field: 'properties.date'
+    not_empty: true
+
+entity:
+  # One feature per dated position, oldest first: append keeps the track, and the entity ends
+  # on the latest position.
+  external_id: 'properties.id'
+  name: 'properties.title'
+  metadata:
+    category: 'properties.categories[0].title'
+    magnitude: 'properties.magnitudeValue'
+    magnitude_unit: 'properties.magnitudeUnit'
+    sources: 'properties.sources[0].id'
+    url: 'properties.sources[0].url'
+
+observation:
+  # Points carry [lon, lat]; a few events are LineStrings, use their first vertex.
+  latitude: "=geometry.type == 'Point' ? geometry.coordinates[1] : geometry.coordinates[0][1]"
+  longitude: "=geometry.type == 'Point' ? geometry.coordinates[0] : geometry.coordinates[0][0]"
+  timestamp: 'properties.date'
+
+recording:
+  mode: append
+  max_age: 180d

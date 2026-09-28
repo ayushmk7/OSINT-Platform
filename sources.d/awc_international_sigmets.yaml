@@ -1,0 +1,77 @@
+schema_version: 1
+name: awc_international_sigmets
+source_type: aviationweather
+layer_type: aviation
+display_name: 'International SIGMETs (AWC)'
+enabled: true
+
+layer:
+  id: sigmets_international
+  name: International SIGMETs
+  group: Aviation
+  description: Active ICAO SIGMETs worldwide, aviationweather.gov (area centre)
+
+display:
+  icon: alert
+  color: '#ff7043'
+  color_by:
+    field: metadata.hazard
+    map:
+      {
+        TS: '#ff1744',
+        TURB: '#ffab40',
+        ICE: '#40c4ff',
+        VA: '#8d6e63',
+        TC: '#e040fb',
+        MTW: '#ffd740'
+      }
+  size: 1.1
+  # Expired SIGMETs drop out of the feed; prune them after three missed polls.
+  ttl: '20m'
+  fields:
+    - { path: metadata.hazard, label: Hazard }
+    - { path: metadata.qualifier, label: Qualifier }
+    - { path: metadata.fir, label: FIR }
+    - { path: metadata.top_ft, label: Top, format: number, precision: 0, suffix: ' ft' }
+    - { path: metadata.valid_from, label: Valid from, format: datetime }
+    - { path: metadata.valid_to, label: Valid to, format: datetime }
+    - { path: metadata.raw, label: Raw text }
+
+transport:
+  type: http_poll
+  # AWC Data API (https://aviationweather.gov/data/api/). Limit 100 req/min; 5 min is plenty.
+  url: 'https://aviationweather.gov/api/data/isigmet?format=json'
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '5m'
+  retry: { max_attempts: 3, backoff: exponential, initial_delay: '2s', max_delay: '15s' }
+
+parser:
+  format: json
+  max_records: 1000
+
+entity:
+  external_id: '=concat(firId, "-", seriesId, "-", validTimeFrom)'
+  name: '=concat(firName, " ", hazard, " SIGMET ", seriesId)'
+  metadata:
+    hazard: 'hazard'
+    qualifier: 'qualifier'
+    fir: 'firName'
+    top_ft: 'top'
+    base_ft: 'base'
+    valid_from: 'validTimeFrom'
+    valid_to: 'validTimeTo'
+    raw: 'rawSigmet'
+
+# The SIGMET is a polygon; it is plotted at the centre of the bounding box of four
+# evenly spaced vertices.
+observation:
+  latitude: '=(min(coords[0].lat, coords[floor(coords.length / 4)].lat, coords[floor(coords.length / 2)].lat, coords[floor(coords.length * 3 / 4)].lat) + max(coords[0].lat, coords[floor(coords.length / 4)].lat, coords[floor(coords.length / 2)].lat, coords[floor(coords.length * 3 / 4)].lat)) / 2'
+  longitude: '=(min(coords[0].lon, coords[floor(coords.length / 4)].lon, coords[floor(coords.length / 2)].lon, coords[floor(coords.length * 3 / 4)].lon) + max(coords[0].lon, coords[floor(coords.length / 4)].lon, coords[floor(coords.length / 2)].lon, coords[floor(coords.length * 3 / 4)].lon)) / 2'
+  altitude: '=top ?? 0'
+  scale:
+    altitude: 0.3048 # feet -> metres
+
+recording:
+  mode: upsert

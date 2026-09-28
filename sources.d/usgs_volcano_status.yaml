@@ -1,0 +1,72 @@
+schema_version: 1
+name: usgs_volcano_status
+source_type: usgs_vhp
+layer_type: volcanoes_us
+display_name: 'USGS Volcano Alert Status'
+enabled: true
+
+layer:
+  id: volcanoes_us
+  name: US volcano alert levels
+  group: Hazards
+  description: USGS Volcano Hazards Program, aviation colour code per monitored volcano
+
+display:
+  icon: volcano
+  color: '#adb5bd'
+  color_by:
+    field: metadata.color_code
+    map:
+      {
+        GREEN: '#2dc653',
+        YELLOW: '#ffd60a',
+        ORANGE: '#ff7b00',
+        RED: '#e5383b',
+        UNASSIGNED: '#6c757d'
+      }
+  size: 1.0
+  fields:
+    - { path: metadata.color_code, label: Aviation colour code }
+    - { path: metadata.alert_level, label: Alert level }
+    - { path: metadata.observatory, label: Observatory }
+    - { path: metadata.region, label: Region }
+    - { path: metadata.synopsis, label: Latest notice }
+    - { path: metadata.notice_url, label: Notice, format: link }
+    - { path: metadata.url, label: Volcano page, format: link }
+
+transport:
+  type: http_poll
+  # USGS VHP volcano API: https://volcanoes.usgs.gov/vsc/api/volcanoApi/ (vhpstatus = every US volcano)
+  url: 'https://volcanoes.usgs.gov/vsc/api/volcanoApi/vhpstatus'
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '30m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: json
+  max_records: 500
+
+entity:
+  external_id: '=coalesce(volcanoCd, vnum)'
+  name: 'vName'
+  metadata:
+    color_code: 'colorCode'
+    alert_level: 'alertLevel'
+    observatory: '=upper(obs)'
+    region: 'region'
+    synopsis: 'noticeSynopsis'
+    notice_url: 'noticeUrl'
+    url: 'vUrl'
+
+observation:
+  latitude: 'lat'
+  longitude: 'long'
+
+recording:
+  mode: upsert

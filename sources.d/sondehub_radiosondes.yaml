@@ -1,0 +1,88 @@
+schema_version: 1
+name: sondehub_radiosondes
+source_type: sondehub
+layer_type: radiosondes
+display_name: 'SondeHub Radiosondes'
+enabled: true
+
+layer:
+  id: radiosondes
+  name: Weather balloons
+  group: Weather
+  description: SondeHub amateur-tracked radiosondes, heard in the last hour
+
+display:
+  icon: balloon
+  color: '#f8f9fa'
+  color_by:
+    field: altitude
+    stops: [[0, '#80ffdb'], [10000, '#48bfe3'], [20000, '#5e60ce'], [35000, '#7400b8']]
+  size: 0.9
+  trail: { enabled: true, max_points: 60 }
+  ttl: '1h'
+  fields:
+    - { path: altitude, label: Altitude, format: number, precision: 0, suffix: ' m' }
+    - {
+        path: metadata.vertical_ms,
+        label: Vertical speed,
+        format: number,
+        precision: 1,
+        suffix: ' m/s'
+      }
+    - { path: metadata.type, label: Sonde type }
+    - {
+        path: metadata.frequency_mhz,
+        label: Frequency,
+        format: number,
+        precision: 2,
+        suffix: ' MHz'
+      }
+    - { path: metadata.temp_c, label: Temperature, format: number, precision: 1, suffix: ' °C' }
+    - { path: metadata.humidity, label: Humidity, format: number, precision: 0, suffix: '%' }
+    - { path: metadata.uploader, label: Heard by }
+    - { path: timestamp, label: Frame time, format: datetime }
+    - { path: metadata.url, label: Tracker, format: link }
+
+transport:
+  type: http_poll
+  # SondeHub v2 API: https://github.com/projecthorus/sondehub-infra/wiki/API-(Beta) (/sondes = latest frame per serial)
+  url: 'https://api.v2.sondehub.org/sondes?last=3600'
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '2m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '60s'
+
+parser:
+  format: json
+  # Response is an object keyed by serial number.
+  object_to_records: true
+  key_field: serial_key
+  max_records: 1000
+
+entity:
+  external_id: 'serial_key'
+  name: "=concat(serial_key, ' (', coalesce(subtype, type), ')')"
+  metadata:
+    vertical_ms: 'vel_v'
+    type: '=coalesce(subtype, type)'
+    frequency_mhz: 'frequency'
+    temp_c: 'temp'
+    humidity: 'humidity'
+    uploader: 'uploader_callsign'
+    url: "=concat('https://sondehub.org/', serial_key)"
+
+observation:
+  latitude: 'lat'
+  longitude: 'lon'
+  altitude: 'alt' # metres
+  speed: 'vel_h' # m/s
+  heading: 'heading'
+  timestamp: 'datetime'
+
+recording:
+  mode: append

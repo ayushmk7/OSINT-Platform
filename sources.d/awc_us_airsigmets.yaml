@@ -1,0 +1,72 @@
+schema_version: 1
+name: awc_us_airsigmets
+source_type: aviationweather
+layer_type: aviation
+display_name: 'US SIGMETs and AIRMETs (AWC)'
+enabled: true
+
+layer:
+  id: sigmets_us
+  name: US SIGMETs / AIRMETs
+  group: Aviation
+  description: Domestic US convective and non-convective SIGMETs and AIRMETs, aviationweather.gov
+
+display:
+  icon: alert
+  color: '#ffca28'
+  color_by:
+    field: metadata.hazard
+    map:
+      {
+        CONVECTIVE: '#ff1744',
+        TURB: '#ffab40',
+        ICE: '#40c4ff',
+        IFR: '#b388ff',
+        'MTN OBSCN': '#a1887f',
+        ASH: '#8d6e63'
+      }
+  size: 1.1
+  ttl: '20m'
+  fields:
+    - { path: metadata.type, label: Type }
+    - { path: metadata.hazard, label: Hazard }
+    - { path: metadata.severity, label: Severity }
+    - { path: metadata.top_ft, label: Top, format: number, precision: 0, suffix: ' ft' }
+    - { path: metadata.valid_from, label: Valid from, format: datetime }
+    - { path: metadata.valid_to, label: Valid to, format: datetime }
+    - { path: metadata.raw, label: Raw text }
+
+transport:
+  type: http_poll
+  url: 'https://aviationweather.gov/api/data/airsigmet?format=json'
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '5m'
+  retry: { max_attempts: 3, backoff: exponential, initial_delay: '2s', max_delay: '15s' }
+
+parser:
+  format: json
+  max_records: 1000
+
+entity:
+  external_id: '=concat(airSigmetType, "-", seriesId, "-", hazard, "-", validTimeFrom)'
+  name: '=concat(airSigmetType, " ", seriesId, " ", hazard)'
+  metadata:
+    type: 'airSigmetType'
+    hazard: 'hazard'
+    severity: 'severity'
+    top_ft: 'altitudeHi1'
+    valid_from: 'validTimeFrom'
+    valid_to: 'validTimeTo'
+    raw: 'rawAirSigmet'
+
+observation:
+  latitude: '=(min(coords[0].lat, coords[floor(coords.length / 4)].lat, coords[floor(coords.length / 2)].lat, coords[floor(coords.length * 3 / 4)].lat) + max(coords[0].lat, coords[floor(coords.length / 4)].lat, coords[floor(coords.length / 2)].lat, coords[floor(coords.length * 3 / 4)].lat)) / 2'
+  longitude: '=(min(coords[0].lon, coords[floor(coords.length / 4)].lon, coords[floor(coords.length / 2)].lon, coords[floor(coords.length * 3 / 4)].lon) + max(coords[0].lon, coords[floor(coords.length / 4)].lon, coords[floor(coords.length / 2)].lon, coords[floor(coords.length * 3 / 4)].lon)) / 2'
+  altitude: '=altitudeHi1 ?? 0'
+  scale:
+    altitude: 0.3048
+
+recording:
+  mode: upsert

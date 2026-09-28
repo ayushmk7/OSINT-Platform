@@ -1,0 +1,77 @@
+schema_version: 1
+name: awc_gairmets
+source_type: aviationweather
+layer_type: aviation
+display_name: 'Graphical AIRMETs (AWC)'
+enabled: true
+
+layer:
+  id: gairmets
+  name: G-AIRMETs
+  group: Aviation
+  description: US graphical AIRMET forecast areas (current and +3/6/9/12 h), aviationweather.gov
+
+display:
+  icon: alert
+  color: '#d4e157'
+  color_by:
+    field: metadata.hazard
+    map:
+      {
+        TURB-HI: '#ff9100',
+        TURB-LO: '#ffab40',
+        LLWS: '#ff6e40',
+        SFC_WND: '#ffd740',
+        ICE: '#40c4ff',
+        FZLVL: '#80d8ff',
+        IFR: '#b388ff',
+        MT_OBSC: '#a1887f'
+      }
+  size: 0.9
+  ttl: '30m'
+  fields:
+    - { path: metadata.product, label: Product }
+    - { path: metadata.hazard, label: Hazard }
+    - {
+        path: metadata.forecast_hour,
+        label: Forecast hour,
+        format: number,
+        precision: 0,
+        prefix: '+',
+        suffix: ' h'
+      }
+    - { path: metadata.due_to, label: Due to }
+    - { path: metadata.valid_time, label: Valid at, format: datetime }
+    - { path: metadata.expires, label: Expires, format: datetime }
+
+transport:
+  type: http_poll
+  url: 'https://aviationweather.gov/api/data/gairmet?format=json'
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '10m'
+  retry: { max_attempts: 3, backoff: exponential, initial_delay: '2s', max_delay: '15s' }
+
+parser:
+  format: json
+  max_records: 2000
+
+entity:
+  external_id: '=concat(product, "-", tag, "-", hazard, "-", forecastHour)'
+  name: '=concat("G-AIRMET ", hazard, " +", forecastHour, "h (", tag, ")")'
+  metadata:
+    product: 'product'
+    hazard: 'hazard'
+    forecast_hour: 'forecastHour'
+    due_to: 'due_to'
+    severity: 'severity'
+    valid_time: 'validTime'
+    expires: 'expireTime'
+
+observation:
+  latitude: '=(min(coords[0].lat, coords[floor(coords.length / 4)].lat, coords[floor(coords.length / 2)].lat, coords[floor(coords.length * 3 / 4)].lat) + max(coords[0].lat, coords[floor(coords.length / 4)].lat, coords[floor(coords.length / 2)].lat, coords[floor(coords.length * 3 / 4)].lat)) / 2'
+  longitude: '=(min(coords[0].lon, coords[floor(coords.length / 4)].lon, coords[floor(coords.length / 2)].lon, coords[floor(coords.length * 3 / 4)].lon) + max(coords[0].lon, coords[floor(coords.length / 4)].lon, coords[floor(coords.length / 2)].lon, coords[floor(coords.length * 3 / 4)].lon)) / 2'
+
+recording:
+  mode: upsert
