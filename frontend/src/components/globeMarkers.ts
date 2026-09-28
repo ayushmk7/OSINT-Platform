@@ -7,7 +7,7 @@
 //   * Contrast on ANY basemap (dark tiles, Blue Marble, relief) comes from a soft dark halo that
 //     `makeMarker` applies to every glyph — the draw fns never paint black themselves.
 // Rotatable shapes (flight, ship) point north (heading 0) so GlobeView can rotate them.
-type IconDrawFn = (ctx: CanvasRenderingContext2D, color: string) => void;
+import { iconDrawFn, type IconDrawFn } from './markerIcons';
 
 const ICON_SIZE = 32; // logical drawing grid (CX = CY = 16)
 const CANVAS_SCALE = 2; // render at 2x so billboards stay crisp when Cesium scales them
@@ -241,6 +241,23 @@ export function markerForCategory(category: string): string {
   return cache[category];
 }
 
+const iconCache = new Map<string, string>();
+
+/**
+ * PNG data-URL for a data-driven `display.icon` in a given colour, rasterized once per
+ * (icon, colour) pair. Unknown icon keys draw the default dot. Callers keep the number of
+ * distinct colours bounded (see `layerStyle.quantizedColor`), so the cache stays small.
+ */
+export function markerForIcon(icon: string, color: string): string {
+  const key = `${icon}|${color}`;
+  let url = iconCache.get(key);
+  if (url === undefined) {
+    url = makeMarker(iconDrawFn(icon), color);
+    iconCache.set(key, url);
+  }
+  return url;
+}
+
 /**
  * Should this entity have a visible billboard, given the HUD filters?
  *
@@ -253,9 +270,11 @@ export function isEntityVisible(
   entity: { category: string; source_id: string },
   activeCategory: string | null,
   enabledSourceIds: string[],
-  sourcesLoaded: boolean
+  sourcesLoaded: boolean,
+  /** The entity's legend layer (source `layer.id`); defaults to its category. */
+  layerId: string = entity.category
 ): boolean {
-  if (activeCategory && entity.category !== activeCategory) return false;
+  if (activeCategory && layerId !== activeCategory) return false;
   if (!sourcesLoaded) return true;
   return enabledSourceIds.includes(entity.source_id);
 }

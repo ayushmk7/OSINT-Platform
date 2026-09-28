@@ -1,7 +1,7 @@
 import { forwardRef, type ReactNode } from 'react';
 import { Box, type BoxProps } from '@mui/material';
 import { glassSurface, hud, eyebrow, monoValue } from '../theme';
-import { colorForCategory, markerForCategory } from './globeMarkers';
+import { colorForCategory, markerForCategory, markerForIcon } from './globeMarkers';
 
 /** Floating translucent panel: the one surface every HUD element sits on. */
 export const HudPanel = forwardRef<HTMLDivElement, BoxProps>(({ sx, ...rest }, ref) => (
@@ -32,10 +32,24 @@ export function categorySingular(category: string): string {
   return CATEGORY_META[category]?.singular ?? category.replace(/_/g, ' ');
 }
 
-/** The category's real globe marker (same rasterised PNG), falling back to a colour swatch. */
-export const CategoryGlyph = ({ category, size = 18 }: { category: string; size?: number }) => {
-  const color = colorForCategory(category);
-  const src = markerForCategory(category);
+/**
+ * The layer's real globe marker (same rasterised PNG), falling back to a colour swatch. With an
+ * `icon` (data-driven `display.icon`) it draws that registry glyph in `color`; without one it
+ * draws the legacy category silhouette.
+ */
+export const CategoryGlyph = ({
+  category,
+  icon,
+  color: colorOverride,
+  size = 18
+}: {
+  category: string;
+  icon?: string | null;
+  color?: string;
+  size?: number;
+}) => {
+  const color = colorOverride ?? colorForCategory(category);
+  const src = icon ? markerForIcon(icon, color) : markerForCategory(category);
   return (
     <Box
       aria-hidden

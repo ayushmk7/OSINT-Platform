@@ -27,6 +27,9 @@ export interface EntityRecord {
   timestamp: string;
   /** Always a parsed object on the wire (REST, `initial_state`, `entity_update`). */
   metadata?: Record<string, unknown>;
+  /** Latest speed / heading when the frame carries them (live updates, initial snapshot). */
+  speed?: number | null;
+  heading?: number | null;
   trail?: TrailPoint[];
 }
 
@@ -85,6 +88,13 @@ const entitiesSlice = createSlice({
       }
       state.entities[ent.id] = { ...ent, trail: newTrail };
     },
+    /** Server-side ttl expiry (`entity_remove`) or client-side ttl pruning. */
+    removeEntities(state, action: PayloadAction<string[]>) {
+      for (const id of action.payload) {
+        delete state.entities[id];
+        if (state.selectedEntityId === id) state.selectedEntityId = null;
+      }
+    },
     setSelectedEntityId(state, action: PayloadAction<string | null>) {
       state.selectedEntityId = action.payload;
     },
@@ -94,6 +104,11 @@ const entitiesSlice = createSlice({
   }
 });
 
-export const { setInitialEntities, upsertEntity, setSelectedEntityId, setActiveCategoryFilter } =
-  entitiesSlice.actions;
+export const {
+  setInitialEntities,
+  upsertEntity,
+  removeEntities,
+  setSelectedEntityId,
+  setActiveCategoryFilter
+} = entitiesSlice.actions;
 export default entitiesSlice.reducer;

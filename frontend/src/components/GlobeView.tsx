@@ -10,7 +10,7 @@ import {
 } from '../store/slices/entitiesSlice';
 import {
   markerForCategory,
-  bearingRad,
+  markerForIcon,
   isEntityVisible,
   colorForCategory,
   zoneRadiusMeters,
@@ -19,6 +19,8 @@ import {
   ATC_ZONE_CATEGORY
 } from './globeMarkers';
 import { GlobeStyleController } from './globeStyles';
+import { entityHeadingRad, entityLayerId, isExpired, resolveEntityStyle } from './layerStyle';
+import { useTtlPruner } from '../hooks/useTtlPruner';
 
 // Gentle idle rotation, in radians per clock tick (~60fps). Stops on first interaction.
 const SPIN_PER_TICK = 0.0015;
@@ -109,6 +111,7 @@ export const GlobeView: FC = () => {
   const entities = useAppSelector((s) => s.entities.entities);
   const activeCategory = useAppSelector((s) => s.entities.activeCategoryFilter);
   const enabledSources = useAppSelector((s) => s.sources.enabledSourceIds);
+  const sources = useAppSelector((s) => s.sources.sources);
   // "Has the source list arrived yet?" — NOT "are any sources enabled?". Before `initial_state`
   // lands both lists are empty and everything must still draw; once the list is known, an
   // unchecked source must hide its entities, including when the user unchecks every one.
@@ -124,6 +127,12 @@ export const GlobeView: FC = () => {
   const zonesById = useRef<Map<string, Cesium.Entity>>(new Map());
   const globeStyleRef = useRef<GlobeStyleController | null>(null);
   const ringRef = useRef<Cesium.Billboard | null>(null);
+  // Image currently on each billboard, so a colour change (color_by) swaps the texture only
+  // when it actually changed.
+  const imageById = useRef<Map<string, string>>(new Map());
+
+  // Drop entities that outlived their source's display.ttl (the server prunes too).
+  useTtlPruner();
 
   // Mount once: create the viewer, the billboard layer, and the click handler.
   useEffect(() => {
@@ -237,6 +246,7 @@ export const GlobeView: FC = () => {
       viewer.clock.onTick.removeEventListener(onTick);
       handler.destroy();
       byId.current.clear();
+      imageById.current.clear();
       zonesById.current.clear(); // the Entities die with the viewer; drop the stale handles too
       globeStyleRef.current?.destroy();
       globeStyleRef.current = null;
@@ -276,9 +286,21 @@ export const GlobeView: FC = () => {
     const visibleIds = new Set<string>();
     let selectedPosition: Cesium.Cartesian3 | null = null;
 
+    const now = Date.now();
     for (const entity of Object.values(entities)) {
-      if (!isEntityVisible(entity, activeCategory, enabledSources, sourcesLoaded)) continue;
+      const source = sources[entity.source_id];
+      if (isExpired(entity, source, now)) continue;
+      const layerId = entityLayerId(entity, source);
+      if (!isEntityVisible(entity, activeCategory, enabledSources, sourcesLoaded, layerId)) {
+        continue;
+      }
       visibleIds.add(entity.id);
+
+      // Data-driven style from the source's `display` block (legacy category style otherwise).
+      const style = resolveEntityStyle(entity, source);
+      const image = style.icon
+        ? markerForIcon(style.icon, style.color)
+        : markerForCategory(entity.category);
 
       const position = Cesium.Cartesian3.fromDegrees(
         entity.longitude,
@@ -290,7 +312,7 @@ export const GlobeView: FC = () => {
         bb = billboards.add({
           id: entity.id,
           position,
-          image: markerForCategory(entity.category),
+          image,
           color: Cesium.Color.WHITE, // color is baked into the PNG pixels
           // Normal depth testing (NO disableDepthTestDistance): markers on the far side of the
           // globe are hidden behind it instead of being drawn through the limb.
@@ -298,12 +320,17 @@ export const GlobeView: FC = () => {
           translucencyByDistance: TRANSLUCENCY_BY_DISTANCE
         });
         map.set(entity.id, bb);
+        imageById.current.set(entity.id, image);
       } else {
         bb.position = position;
         bb.show = true;
+        if (imageById.current.get(entity.id) !== image) {
+          bb.image = image;
+          imageById.current.set(entity.id, image);
+        }
       }
       const isSelected = entity.id === selectedId;
-      bb.scale = (isSelected ? SELECTED_SCALE_BOOST : 1.0) * MARKER_BASE_SCALE;
+      bb.scale = (isSelected ? SELECTED_SCALE_BOOST : 1.0) * MARKER_BASE_SCALE * style.size;
       if (isSelected) {
         selectedPosition = position;
         bb.translucencyByDistance = NO_FADE; // the selected marker never fades
@@ -316,27 +343,39 @@ export const GlobeView: FC = () => {
         upsertZone(viewer, zonesById.current, entity, entity.id === selectedId);
       }
 
-      // Aircraft & ships: rotate to travel heading derived from the last two trail points.
-      // (Both silhouettes point north, so the same rotation applies.)
-      if (
-        (entity.category === 'aircraft' || entity.category === 'maritime') &&
-        entity.trail &&
-        entity.trail.length >= 2
-      ) {
-        const a = entity.trail[entity.trail.length - 2];
-        const b = entity.trail[entity.trail.length - 1];
-        bb.rotation = -bearingRad(a.latitude, a.longitude, b.latitude, b.longitude);
-        bb.alignedAxis = Cesium.Cartesian3.UNIT_Z;
+      // Directional glyphs rotate to heading (reported heading, else the bearing between the
+      // last two trail points). Every silhouette points north, so one rotation fits all. The
+      // aligned axis is the globe's Z, so the nose tracks true north as the camera turns.
+      if (style.rotate) {
+        const heading = entityHeadingRad(entity);
+        if (heading !== null) {
+          bb.rotation = -heading;
+          bb.alignedAxis = Cesium.Cartesian3.UNIT_Z;
+        }
       }
     }
 
     for (const [id, bb] of map) {
-      if (!visibleIds.has(id)) bb.show = false;
+      if (visibleIds.has(id)) continue;
+      if (entities[id]) {
+        bb.show = false; // filtered out: hide, so re-enabling a layer costs nothing
+      } else {
+        // Gone from the store (ttl expiry / entity_remove): free the billboard for good.
+        billboards.remove(bb);
+        map.delete(id);
+        imageById.current.delete(id);
+      }
     }
     // Zones follow the same layer/source filters as their marker — hide, never remove, so a
-    // re-enabled layer costs nothing to bring back.
+    // re-enabled layer costs nothing to bring back (unless the entity itself is gone).
     for (const [id, zone] of zonesById.current) {
-      if (!visibleIds.has(id)) zone.show = false;
+      if (visibleIds.has(id)) continue;
+      if (entities[id]) {
+        zone.show = false;
+      } else {
+        viewer.entities.remove(zone);
+        zonesById.current.delete(id);
+      }
     }
     const ring = ringRef.current;
     if (ring) {
@@ -344,7 +383,7 @@ export const GlobeView: FC = () => {
       if (selectedPosition) ring.position = selectedPosition;
     }
     viewer.scene.requestRender();
-  }, [entities, activeCategory, enabledSources, sourcesLoaded, selectedId]);
+  }, [entities, sources, activeCategory, enabledSources, sourcesLoaded, selectedId]);
 
   return (
     <Box
