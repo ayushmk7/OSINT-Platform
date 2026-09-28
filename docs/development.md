@@ -74,6 +74,7 @@ All are optional and read by `backend/src/index.ts`. The template is [`backend/.
 | `MKOSINT_APP_NAME` | `MK-OSINT` | Browser tab title, delivered through `/config.json`. |
 | `MKOSINT_CESIUM_ION_TOKEN` | unset | Cesium ion access token, delivered through `/config.json` and set as `Cesium.Ion.defaultAccessToken`. Browser-visible by design. |
 | `MKOSINT_DEFAULT_GLOBE_STYLE` | `tactical` | Initial globe style: `tactical`, `blue_marble`, `night_lights`, `neon_vector`, `terrain_relief` or `holographic`. Unknown values are ignored. |
+| `MKOSINT_DB_MAX_MB` | `500` | Database size ceiling for the retention job. Above it, the oldest observations are pruned until usage is under 90%, then `PRAGMA incremental_vacuum` runs. `0` disables the guard. Shrinking the file on disk needs a database created by this version (`auto_vacuum = INCREMENTAL`). |
 
 `dotenv` loads `.env` from the process working directory. With the npm scripts that is `backend/`, so put overrides in `backend/.env` (it is gitignored) or export them in your shell:
 
@@ -135,7 +136,7 @@ CI runs `npm run format:check`, so run `make format` before committing. There is
 
 ## Marker icon preview
 
-[`tools/tactical-icon-preview.html`](../tools/tactical-icon-preview.html) is a standalone page with no build step. Open it directly in a browser to inspect the globe's marker silhouettes at large size and at several rotations, which shows how heading rotation looks. It carries its own copy of the Canvas 2D drawing functions, so it does not update automatically when `frontend/src/components/globeMarkers.ts` changes. It covers every canonical category, including the `atc_zone` tower.
+[`tools/tactical-icon-preview.html`](../tools/tactical-icon-preview.html) is a standalone page with no build step. Open it directly in a browser to inspect the globe's marker silhouettes at large size and at several rotations, which shows how heading rotation looks. It carries its own copy of the Canvas 2D drawing functions, so it does not update automatically when `frontend/src/components/globeMarkers.ts` changes. It covers every canonical category, including the `atc_zone` tower. It does not include the data-driven icon registry (`frontend/src/components/markerIcons.ts`); to eyeball those, import `markerForIcon` from the running dev server in the browser console, or rely on `markerIcons.test.ts`, which checks that every contract icon key draws in its given colour only.
 
 ## Deployment
 

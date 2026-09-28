@@ -5,6 +5,19 @@ layer_type: atc_zones
 display_name: 'ATC Facilities (OurAirports)'
 enabled: true
 
+layer:
+  id: atc_zone
+  name: ATC zones
+  group: Aviation
+  description: Airport control zones (illustrative)
+
+display:
+  icon: tower
+  color: '#b388ff'
+  size: 0.9
+  # Static reference data: never expires (no ttl). No `fields`: the inspector's dedicated
+  # ATC panel already shows ICAO / IATA / radius and the LiveATC link-out.
+
 # Static reference data, not live telemetry: the airport register changes on the order of
 # weeks, so this polls daily rather than on the minute.
 transport:
@@ -37,7 +50,6 @@ filter:
 entity:
   external_id: 'icao_code'
   name: 'name'
-  category: 'atc_zone'
   metadata:
     icao: 'icao_code'
     iata_code: 'iata_code'

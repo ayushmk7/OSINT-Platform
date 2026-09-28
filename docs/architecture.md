@@ -62,13 +62,13 @@ All code lives in `backend/src/engine/`.
 
 `loadSourcesFromDir(dir)` reads every `*.yaml` / `*.yml` file in the directory in sorted order and parses it with the `yaml` package. Each parsed file goes through `validateSourceConfig()`, which returns every problem it finds: a missing or empty `name`, `source_type`, `transport.type`, `transport.url`, `parser.format`, `entity.external_id`, `observation.latitude` or `observation.longitude`; a `schema_version` other than `1` (`SUPPORTED_SCHEMA_VERSIONS`; absent means 1); a `transport.retry.backoff` outside `exponential`, `linear`, `fixed`; or an `observation.scale` entry that is not one of `SCALABLE_OBSERVATION_FIELDS` or not a finite number; a `parser.format` outside `PARSER_FORMATS`, malformed `parser.csv` / `array_columns`, a `recording.mode` outside `RECORDING_MODES`, an unparseable `recording.max_age`, a filter rule with neither `field` nor `expr`, or an expression with a syntax error. `lookups:` file tables are then loaded by `resolveLookups()`; a failure there also skips the file. Invalid files are logged as `Skipping invalid source definition <path>: <problems>` and unparseable files are logged too; both are skipped and never abort the load.
 
-The file also defines the canonical category list, `ENTITY_CATEGORIES`:
+`entity.category` is an open set: any lowercase snake_case id is valid (`isEntityCategory`). The six legacy categories stay exported as `ENTITY_CATEGORIES` / `LEGACY_ENTITY_CATEGORIES`:
 
 ```
 satellite, aircraft, geological, radiation, maritime, atc_zone
 ```
 
-A source with a different `entity.category` still loads, but a warning is logged because the frontend has no marker for it.
+The optional `layer:` and `display:` blocks are validated and resolved by `layer-display.ts` (`validateLayerDisplay()` feeds `validateSourceConfig()`; `resolveLayerDisplay()` applies defaults). Every config returned by the loader carries a resolved `layer` and `display`, and `entity.category` defaults to `layer.id`. An unknown `display.icon` only warns and becomes `dot`; any other bad value rejects the file. See [data-sources.md](data-sources.md#layer-and-display).
 
 `parseDurationSeconds()` turns interval and timeout strings (`"30s"`, `"5m"`, `"1h"`, `"500ms"`, or a bare number of seconds) into whole seconds.
 
@@ -78,7 +78,7 @@ The full schema is documented in [data-sources.md](data-sources.md).
 
 `IngestionScheduler` owns the polling loop.
 
-- `initSources()` loads the configs and upserts one row per source into the `sources` table (`id` = `name`, `name` = `display_name`, `type` = `source_type`, `transport` = `transport.type`, `update_interval_sec` = parsed interval, `enabled` = 0 or 1). If a row cannot be written, the error is logged and that source is dropped from the configs (never polled) instead of aborting startup.
+- `initSources()` loads the configs and upserts one row per source into the `sources` table (`id` = `name`, `name` = `display_name`, `type` = `source_type`, `transport` = `transport.type`, `update_interval_sec` = parsed interval, `enabled` = 0 or 1), then stores the resolved `layer` / `display` as JSON on the same row (`source-presentation.ts`). If a row cannot be written, the error is logged and that source is dropped from the configs (never polled) instead of aborting startup.
 - `start()` calls `initSources()`, then for each source that is not `enabled: false` polls once immediately and again every `transport.interval` (default 60 seconds) with `setInterval`.
 - `pollSource(config)` runs one fetch, parse, filter, map and persist cycle inside a single SQLite transaction and returns the number of records written. Errors are logged with the source name and the method returns 0, so one failing feed never stops the others. Counters for the poll (`written`, `skipped`, `filtered`, `unlocated`, `duplicates`, `stale`) are kept in `lastStats`.
 - For orbital formats (`tle`, `omm_json`) the parsed element sets are cached per source and propagated to "now" before mapping. `repropagate(config)` re-propagates the cached sets without fetching; `start()` schedules it every `transport.propagate_interval`.
@@ -105,6 +105,16 @@ After the transaction commits, `onEntityUpdate` is called for each changed entit
 - `transports/request.ts` `resolveRequest()` substitutes env, applies auth (`auth.ts` `applyAuth`: bearer, api_key, basic, OAuth2 client credentials with an in-memory token cache) and encodes the body.
 - `transports/http.ts` `fetchHttpRecords()` is one HTTP poll: it resolves the request, then calls `fetchUrl()` once, or once per page through `pagination.ts` `fetchPaginated()`, parsing each page with the scheduler's parser and concatenating the records. Errors are re-thrown with secrets masked.
 - `transports/stream.ts` `StreamRunner` is the shared base for `transports/websocket.ts` (the `ws` client) and `transports/sse.ts` (fetch streaming plus `SseDecoder`): it parses each message, buffers records for `batch_window`, hands each batch to `ingestRecords`, and reconnects with `retryDelayMs()`.
+### retention (`retention.ts`)
+
+`startRetention(db, { getConfigs, onRemove })` is started from `index.ts` once the server is listening. It sweeps immediately and then every 60 seconds (`RETENTION_INTERVAL_MS`):
+
+1. `expireEntities()` deletes, per source with a `display.ttl`, every entity whose `timestamp` is older than the ttl, together with its observations. The removed ids go to `onRemove`, which `index.ts` wires to `broadcaster.broadcastEntityRemove()` (the WS `entity_remove` frame).
+2. `enforceDbSizeLimit()` is a size guard. When the pages in use exceed `MKOSINT_DB_MAX_MB` (default 500; `0` disables it), it deletes the oldest observations in steps until usage is under 90% of the ceiling, then runs `PRAGMA incremental_vacuum` to hand the freed pages back to the OS.
+
+Errors are logged and never stop the timer, which is `unref()`'d.
+
+The scheduler's in-memory last-position cache is not cleared on expiry, so an expired entity that reappears at exactly the same position is written to the database but not re-broadcast until it moves.
 
 ### http-fetcher (`http-fetcher.ts`)
 
@@ -155,7 +165,7 @@ After the transaction commits, `onEntityUpdate` is called for each changed entit
 
 ## Database schema
 
-Defined in `backend/src/db/database.ts`. The database runs in WAL mode (`journal_mode = WAL`). Tables are created with `CREATE TABLE IF NOT EXISTS` on every start; there is no migration system.
+Defined in `backend/src/db/database.ts`. The database runs in WAL mode (`journal_mode = WAL`). A new database file is created with `auto_vacuum = INCREMENTAL` so the retention job can shrink it; an existing file keeps its mode (delete it to switch). Tables are created with `CREATE TABLE IF NOT EXISTS` on every start. The only migration is additive: `layer` and `display` columns are added to `sources` when missing.
 
 ### `sources`
 
@@ -168,6 +178,8 @@ Defined in `backend/src/db/database.ts`. The database runs in WAL mode (`journal
 | `url` | TEXT NOT NULL | |
 | `update_interval_sec` | INTEGER NOT NULL DEFAULT 60 | |
 | `enabled` | INTEGER NOT NULL DEFAULT 1 | 0 or 1. Returned by the API as a boolean. |
+| `layer` | TEXT | Resolved YAML `layer` block as JSON. Returned as an object, or `null` for a row written before the column existed. |
+| `display` | TEXT | Resolved YAML `display` block as JSON. Same treatment as `layer`. |
 
 ### `entities`
 
@@ -198,7 +210,7 @@ Also indexed: `idx_entities_source_id`.
 
 A unique index `ux_observations_entity_timestamp` on `(entity_id, timestamp)` enforces one observation per entity per instant. Together with the deterministic id and `INSERT OR IGNORE`, it prevents duplicate rows when a feed returns the same data on consecutive polls.
 
-Queries live in `backend/src/db/queries.ts`. All filters are bound as prepared-statement parameters. `getEntities()` and `getObservations()` return one page of rows plus `total`, a `COUNT(*)` over the same `WHERE` clause. `serializeSource()`, `serializeEntity()` and `serializeObservation()` (built on `parseJsonObject()`) turn `enabled` into a boolean and `metadata` / `raw_payload` into objects before rows leave the query layer. `getInitialSnapshot(perCategory)` uses `ROW_NUMBER() OVER (PARTITION BY category ORDER BY timestamp DESC)` to take the newest N entities per category. This stops a high-frequency category such as aircraft from crowding the others out of the first paint.
+Queries live in `backend/src/db/queries.ts`. All filters are bound as prepared-statement parameters. `getEntities()` and `getObservations()` return one page of rows plus `total`, a `COUNT(*)` over the same `WHERE` clause. `serializeSource()`, `serializeEntity()` and `serializeObservation()` (built on `parseJsonObject()`) turn `enabled` into a boolean and `metadata` / `raw_payload` into objects before rows leave the query layer. `getInitialSnapshot(perCategory)` uses `ROW_NUMBER() OVER (PARTITION BY category ORDER BY timestamp DESC)` to take the newest N entities per category, and adds each entity's latest `heading` and `speed` from its newest observation (null when it has none). This stops a high-frequency category such as aircraft from crowding the others out of the first paint.
 
 ## REST API
 
@@ -214,7 +226,7 @@ Queries live in `backend/src/db/queries.ts`. All filters are bound as prepared-s
 
 A heartbeat runs every 30 seconds (`HEARTBEAT_INTERVAL_MS`). Each round sends a protocol-level ping and an application-level `{"type":"ping"}` message, and terminates any socket that did not answer the previous round. The timer is `unref()`'d so it never keeps the process alive.
 
-`backend/src/websocket/broadcaster.ts` exports a singleton `TelemetryBroadcaster` that holds the set of live sockets and fans messages out to every open one. The scheduler calls `broadcastEntityUpdate` only for new or moved entities, so a feed that returns thousands of unchanged records produces no traffic. `broadcastEntityUpdate` normalises `metadata` to an object with `parseJsonObject()`, the same wire format as REST and `initial_state`. No other message is broadcast.
+`backend/src/websocket/broadcaster.ts` exports a singleton `TelemetryBroadcaster` that holds the set of live sockets and fans messages out to every open one. The scheduler calls `broadcastEntityUpdate` only for new or moved entities, so a feed that returns thousands of unchanged records produces no traffic. `broadcastEntityUpdate` normalises `metadata` to an object with `parseJsonObject()`, the same wire format as REST and `initial_state`; the frame also carries the mapper's `speed` and `heading`. `broadcastEntityRemove(ids)` sends `entity_remove` for entities the retention job expired.
 
 The message format is documented in [api.md](api.md#websocket-protocol).
 
@@ -226,8 +238,8 @@ The message format is documented in [api.md](api.md#websocket-protocol).
 
 | Slice | File | State | Actions |
 | :-- | :-- | :-- | :-- |
-| `entities` | `slices/entitiesSlice.ts` | `entities` (by id), `selectedEntityId`, `activeCategoryFilter` | `setInitialEntities`, `upsertEntity`, `setSelectedEntityId`, `setActiveCategoryFilter` |
-| `sources` | `slices/sourcesSlice.ts` | `sources` (by id), `enabledSourceIds` | `setSources`, `toggleSourceEnabled` |
+| `entities` | `slices/entitiesSlice.ts` | `entities` (by id), `selectedEntityId`, `activeCategoryFilter` (the isolated legend layer id) | `setInitialEntities`, `upsertEntity`, `removeEntities`, `setSelectedEntityId`, `setActiveCategoryFilter` |
+| `sources` | `slices/sourcesSlice.ts` | `sources` (by id, including `layer` and `display`), `enabledSourceIds` | `setSources`, `mergeSources` (keeps the user's toggles), `toggleSourceEnabled` |
 | `filter` | `slices/filterSlice.ts` | `filterMode`, `fpsVisible`, `lodEnabled`, `currentFps`, `globeStyle` | `setFilterMode`, `toggleFpsDisplay`, `toggleLod`, `updateFps`, `setGlobeStyle` |
 
 Each entity keeps a client-side `trail` of up to 20 points (`MAX_TRAIL_POINTS`), appended on every `upsertEntity`. The backend always sends `metadata` as an object; `parseEntityMetadata()` only guards the shape, returning `{}` for anything that is not a plain object, and never throws.
@@ -238,7 +250,9 @@ Toggling a source in the layer drawer only changes `enabledSourceIds` in the bro
 
 ### Live telemetry hook
 
-`hooks/useWebSocket.ts` connects to `ws(s)://<page host>/ws/telemetry`, using `wss` when the page is served over HTTPS. It dispatches `setSources` and `setInitialEntities` on `initial_state`, and `upsertEntity` on `entity_update`, and replies to server `ping` messages with `pong`. If the socket drops, it reconnects with exponential backoff: 3 seconds, doubling, capped at 30 seconds. It returns `isConnected`, `isReconnecting`, `messageRate` (frames in the last second) and `lastSeenTimestamp`.
+`hooks/useWebSocket.ts` connects to `ws(s)://<page host>/ws/telemetry`, using `wss` when the page is served over HTTPS. It dispatches `setSources` and `setInitialEntities` on `initial_state`, `upsertEntity` on `entity_update`, `removeEntities` on `entity_remove` and `mergeSources` on `source_update`, and replies to server `ping` messages with `pong`.
+
+`hooks/useTtlPruner.ts` (mounted by `GlobeView`) drops entities older than their source's `display.ttl_seconds` every 15 seconds, so stale contacts disappear even if an `entity_remove` frame was missed. If the socket drops, it reconnects with exponential backoff: 3 seconds, doubling, capped at 30 seconds. It returns `isConnected`, `isReconnecting`, `messageRate` (frames in the last second) and `lastSeenTimestamp`.
 
 ### Components
 
@@ -246,13 +260,15 @@ Toggling a source in the layer drawer only changes `enabledSourceIds` in the bro
 
 | Component | Purpose |
 | :-- | :-- |
-| `GlobeView` | Creates the Cesium `Viewer` with no default imagery and most widgets disabled. Draws every entity as a billboard in one `BillboardCollection`, plus a ground ellipse for `atc_zone` entities sized from `metadata.radius_km`. Handles click-to-select, idle rotation until the first interaction, the LOD toggle (resolution scale 0.6 and screen-space error 8) and globe style switching. Aircraft and maritime markers rotate to the bearing between their last two trail points. |
-| `globeMarkers.ts` | Canvas 2D marker silhouettes and colours per category (satellite `#00f3ff`, aircraft `#ffaa00`, geological `#ff0055`, radiation `#ffcc00`, maritime `#4fc3f7`, atc_zone `#b388ff`, fallback `#9ca3af`), `isEntityVisible()`, `zoneRadiusMeters()` and `bearingRad()`. |
+| `GlobeView` | Creates the Cesium `Viewer` with no default imagery and most widgets disabled. Draws every entity as a billboard in one `BillboardCollection`, plus a ground ellipse for `atc_zone` entities sized from `metadata.radius_km`. Handles click-to-select, idle rotation until the first interaction, the LOD toggle (resolution scale 0.6 and screen-space error 8) and globe style switching. Each marker's style is resolved from its source's `display` via `entity.source_id` (`layerStyle.ts`): icon, colour (with `color_by` stops interpolated and quantized to 8 steps per segment, or an exact-match map), size multiplier, and rotation to heading (reported heading, else trail bearing; aligned to the globe's Z axis). Sources without a declared `display` use the legacy category style. Billboards of entities removed from the store are destroyed. |
+| `markerIcons.ts` | The icon registry: one Canvas 2D draw function per contract icon key (35), all on the same 32 px grid and 2 px stroke, painting only in the colour they are given. |
+| `layerStyle.ts`, `legend.ts`, `entityFields.ts` | Pure helpers: entity to style / layer id / ttl; the grouped legend model; `display.fields` formatting. |
+| `globeMarkers.ts` | `markerForIcon(icon, color)` (rasterized once per icon and colour), plus the legacy Canvas 2D marker silhouettes and colours per category (satellite `#00f3ff`, aircraft `#ffaa00`, geological `#ff0055`, radiation `#ffcc00`, maritime `#4fc3f7`, atc_zone `#b388ff`, fallback `#9ca3af`), `isEntityVisible()`, `zoneRadiusMeters()` and `bearingRad()`. |
 | `TelemetryStatsBanner` | Connection status chip, stream rate in msgs/s and entity count, inline in the header. |
 | `FilterModeSelector` | Toggle for OFF / CRT / NVG / FLIR. |
 | `GlobeStyleSelector` | Icon toggle for the six globe styles. |
-| `LayerControlDrawer` | Left drawer with category filter buttons (with live counts) and per-source checkboxes. |
-| `EntityDetailsDrawer` | Right-hand, non-modal inspector for the selected entity. Shows its metadata and the latest 25 observations loaded over REST. For `atc_zone` entities it shows a link out to LiveATC's search page. |
+| `LayerControlDrawer` | Left panel. The legend is built from the sources' `layer` blocks, grouped by `layer.group` in collapsible sections with per-group counts; each row shows the layer's icon, name, description and live count, and clicking it isolates that layer id. A quick filter box appears once there are 8 or more layers. Per-source switches sit below. Before any source declares a layer, the six legacy categories are listed. |
+| `EntityDetailsDrawer` | Right-hand, non-modal inspector for the selected entity. Shows the source's `display.fields` first (formatted), then the remaining metadata and the latest 25 observations loaded over REST. For `atc_zone` entities it shows a link out to LiveATC's search page. |
 | `PerformanceControls` | Bottom-left HUD with an FPS read-out measured on `requestAnimationFrame` and the LOD switch. |
 
 The theme (`theme.ts`) is a dark MUI theme with a neon green primary (`#00ff9d`), magenta secondary (`#ff006e`) and a monospace font stack. `HUD_HEADER_HEIGHT` (48 px) is shared by the header and both drawers so the drawers always start below it.

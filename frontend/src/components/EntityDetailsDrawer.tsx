@@ -6,9 +6,11 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useAppDispatch, useAppSelector } from '../store';
 import { setSelectedEntityId, parseEntityMetadata } from '../store/slices/entitiesSlice';
 import { useGetObservationsQuery } from '../store/api/osintApi';
-import { colorForCategory, ATC_ZONE_CATEGORY } from './globeMarkers';
+import { ATC_ZONE_CATEGORY } from './globeMarkers';
 import { hud, eyebrow, monoValue } from '../theme';
-import { HudPanel, CategoryGlyph, categorySingular } from './HudPrimitives';
+import { HudPanel, CategoryGlyph, CATEGORY_META, categorySingular } from './HudPrimitives';
+import { resolveEntityStyle } from './layerStyle';
+import { formatField, metadataKeysInFields, relativeTime } from './entityFields';
 
 const OBSERVATION_LIMIT = 25;
 
@@ -20,20 +22,6 @@ function fieldText(value: unknown): string {
 
 function formatCoord(value: number, pos: string, neg: string): string {
   return `${Math.abs(value).toFixed(4)}° ${value >= 0 ? pos : neg}`;
-}
-
-/** "12s ago" / "4m ago" / "3h ago" / "2d ago". */
-export function relativeTime(iso: string, now: number): string {
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return '—';
-  const s = Math.max(0, Math.round((now - t) / 1000));
-  if (s < 5) return 'just now';
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 48) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }
 
 function useNow(intervalMs: number): number {
@@ -122,6 +110,9 @@ export const EntityDetailsDrawer: FC = () => {
     selectedId ? (state.entities.entities[selectedId] ?? null) : null
   );
   const now = useNow(1000);
+  const source = useAppSelector((state) =>
+    entity ? state.sources.sources[entity.source_id] : undefined
+  );
 
   // Load observation history over REST — this is what exercises the step-3 API.
   const { data: obsData, isFetching } = useGetObservationsQuery(
@@ -147,7 +138,42 @@ export const EntityDetailsDrawer: FC = () => {
   // Speed/heading live on observations, not on the entity row — take the newest sample.
   const latest = observations[0];
 
-  const color = colorForCategory(entity.category);
+  const style = resolveEntityStyle(entity, source);
+  const color = style.color;
+  // Card rows declared by the source (`display.fields`), in order, formatted.
+  const fields = source?.display?.fields ?? [];
+  const fieldRows: [string, ReactNode][] = fields.map((f) => {
+    const out = formatField(entity, f, now);
+    let node: ReactNode = out.text;
+    if (out.href) {
+      node = (
+        <Box
+          component="a"
+          href={out.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          sx={{ color, textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+        >
+          {out.text} ↗
+        </Box>
+      );
+    } else if (out.utc) {
+      node = (
+        <>
+          {out.text}
+          <Box component="span" sx={{ color: hud.textMuted, ml: 0.75 }}>
+            {out.utc}
+          </Box>
+        </>
+      );
+    }
+    return [out.label, node];
+  });
+  const shownKeys = metadataKeysInFields(fields);
+  const badge =
+    CATEGORY_META[entity.category] || !source?.layer
+      ? categorySingular(entity.category)
+      : source.layer.name;
   const isAtcZone = entity.category === ATC_ZONE_CATEGORY;
   const meta = parseEntityMetadata(entity.metadata);
   // Link-out ONLY — LiveATC's terms forbid third-party embedding of the streams themselves, so
@@ -163,7 +189,7 @@ export const EntityDetailsDrawer: FC = () => {
     'liveatc_url'
   ]);
   const metaRows: [string, ReactNode][] = Object.entries(meta)
-    .filter(([k]) => !(isAtcZone && atcKeys.has(k)))
+    .filter(([k]) => !(isAtcZone && atcKeys.has(k)) && !shownKeys.has(k))
     .map(([k, v]) => [k.replace(/_/g, ' '), fieldText(v)]);
   const updated = new Date(entity.timestamp);
 
@@ -182,7 +208,7 @@ export const EntityDetailsDrawer: FC = () => {
     >
       {/* Header */}
       <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, p: 2, pb: 1.75 }}>
-        <CategoryGlyph category={entity.category} size={20} />
+        <CategoryGlyph category={entity.category} icon={style.icon} color={color} size={20} />
         <Box sx={{ minWidth: 0, flexGrow: 1 }}>
           <Box
             component="span"
@@ -199,7 +225,7 @@ export const EntityDetailsDrawer: FC = () => {
               border: `1px solid ${color}40`
             }}
           >
-            {categorySingular(entity.category)}
+            {badge}
           </Box>
           <Box
             component="h2"
@@ -285,6 +311,12 @@ export const EntityDetailsDrawer: FC = () => {
             <Box sx={{ fontSize: '0.6875rem', color: hud.textMuted, mt: 1 }}>
               Opens LiveATC.net in a new tab — audio is never embedded or proxied here.
             </Box>
+          </Section>
+        )}
+
+        {fieldRows.length > 0 && (
+          <Section title="Details">
+            <KeyValueTable rows={fieldRows} />
           </Section>
         )}
 

@@ -100,7 +100,30 @@ curl http://localhost:4000/api/sources
       "transport": "http_poll",
       "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson",
       "update_interval_sec": 60,
-      "enabled": true
+      "enabled": true,
+      "layer": {
+        "id": "geological",
+        "name": "Earthquakes",
+        "group": "Hazards",
+        "description": "USGS, past hour"
+      },
+      "display": {
+        "declared": true,
+        "icon": "quake",
+        "color": "#ff0055",
+        "size": 1,
+        "rotate": false,
+        "trail": { "enabled": false, "max_points": 20 },
+        "ttl": "24h",
+        "ttl_seconds": 86400,
+        "fields": [
+          { "path": "metadata.magnitude", "label": "Magnitude", "format": "number", "precision": 1 }
+        ],
+        "color_by": {
+          "field": "metadata.magnitude",
+          "stops": [[0, "#ffd166"], [3, "#ff9e00"], [5, "#ff3b3b"], [7, "#ff0055"]]
+        }
+      }
     }
   ]
 }
@@ -115,6 +138,10 @@ curl http://localhost:4000/api/sources
 | `url` | YAML `transport.url` |
 | `update_interval_sec` | parsed `transport.interval` |
 | `enabled` | `true` unless the YAML sets `enabled: false` |
+| `layer` | YAML `layer` block with defaults applied; `null` only for a row written before layers existed |
+| `display` | YAML `display` block with defaults applied, plus `declared` and `ttl_seconds`; `null` only for such a legacy row |
+
+The fields of `layer` and `display` are described in [data-sources.md](data-sources.md#layer-and-display).
 
 Errors: `500` with message `Failed to fetch sources`.
 
@@ -328,8 +355,8 @@ Sent once, right after the connection opens.
 }
 ```
 
-- `sources` holds every row of the `sources` table, in the same shape as `GET /api/sources`.
-- `entities` is a category-balanced snapshot: the newest 300 entities per category (`SNAPSHOT_PER_CATEGORY`). `metadata` is a parsed object, as in the REST responses.
+- `sources` holds every row of the `sources` table, in the same shape as `GET /api/sources` (including `layer` and `display`).
+- `entities` is a category-balanced snapshot: the newest 300 entities per category (`SNAPSHOT_PER_CATEGORY`). `metadata` is a parsed object, as in the REST responses. Each entity also carries `heading` and `speed` from its newest observation (`null` if it has none).
 
 If building the snapshot fails, the error is logged on the server and no `initial_state` frame is sent. The socket stays open.
 
@@ -355,7 +382,7 @@ Sent to every connected client when the scheduler writes an entity that is new, 
 }
 ```
 
-`data` is the mapper's `EntityRecord`. `broadcastEntityUpdate()` passes `metadata` through the same `parseJsonObject()` normaliser the REST layer uses, so it is always an object. The frontend's `parseEntityMetadata()` only guards the shape (anything that is not a plain object becomes `{}`). The values in this example are illustrative; `altitude` is metres (24,000 ft scaled by `0.3048`).
+`data` is the mapper's `EntityRecord`, including the observation's `speed` and `heading`. `broadcastEntityUpdate()` passes `metadata` through the same `parseJsonObject()` normaliser the REST layer uses, so it is always an object. The frontend's `parseEntityMetadata()` only guards the shape (anything that is not a plain object becomes `{}`). The values in this example are illustrative; `altitude` is metres (24,000 ft scaled by `0.3048`).
 
 #### `ping`
 
@@ -372,6 +399,22 @@ The reply to a client `ping`.
 ```json
 { "type": "pong", "timestamp": "2026-08-13T18:08:30.015Z" }
 ```
+
+#### `entity_remove`
+
+Sent when the retention job deletes entities whose source `display.ttl` elapsed (checked every 60 seconds). Clients drop these ids.
+
+```json
+{
+  "type": "entity_remove",
+  "timestamp": "2026-09-28T12:01:00.000Z",
+  "data": { "ids": ["adsb_military:ae1234", "adsb_military:ae5678"] }
+}
+```
+
+#### `source_update`
+
+Reserved for when the source list changes at runtime. `data.sources` has the same shape as in `initial_state`; the frontend replaces its source list but keeps the user's on/off toggles for sources it already knew.
 
 The server sends no other message types. Individual observations are not streamed; fetch them from `GET /api/observations`.
 

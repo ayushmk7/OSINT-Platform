@@ -5,6 +5,25 @@ layer_type: radiation
 display_name: 'Safecast Radiation Monitoring'
 enabled: true
 
+layer:
+  id: radiation
+  name: Radiation
+  group: Environment
+  description: Safecast volunteer sensors
+
+display:
+  icon: radiation
+  color: '#ffcc00'
+  # Counts per minute: ~30 CPM is normal background; hundreds is worth a look.
+  color_by:
+    field: metadata.cpm
+    stops: [[0, '#7ee787'], [60, '#ffcc00'], [300, '#ff7b00'], [1000, '#ff0054']]
+  size: 0.9
+  # No ttl: the public feed serves historical measurements (years old), not a live stream.
+  fields:
+    - { path: metadata.cpm, label: Reading, format: number, precision: 0, suffix: ' CPM' }
+    - { path: timestamp, label: Captured, format: datetime }
+
 transport:
   type: http_poll
   url: 'https://api.safecast.org/measurements.json?limit=100'
@@ -26,7 +45,6 @@ parser:
 entity:
   external_id: 'id'
   name: 'device_id'
-  category: 'radiation'
   metadata:
     cpm: 'value'
     unit: 'unit'

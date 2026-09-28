@@ -5,6 +5,32 @@ layer_type: aviation
 display_name: 'Military Flights ADSB'
 enabled: true
 
+layer:
+  id: aircraft
+  name: Military aircraft
+  group: Aviation
+  description: ADS-B military contacts (adsb.fi)
+
+display:
+  icon: plane
+  color: '#ffaa00'
+  # Colour by barometric altitude (metres): low = pale, cruise = amber, high = orange-red.
+  color_by:
+    field: altitude
+    stops: [[0, '#ffe08a'], [6000, '#ffaa00'], [12000, '#ff6d00']]
+  size: 1.0
+  rotate: true
+  trail: { enabled: true, max_points: 20 }
+  # Contacts not re-reported for 5 minutes have left coverage (or landed).
+  ttl: '5m'
+  fields:
+    - { path: metadata.callsign, label: Callsign }
+    - { path: metadata.registration, label: Registration }
+    - { path: metadata.type, label: Aircraft type }
+    - { path: altitude, label: Altitude, format: number, precision: 0, suffix: ' m' }
+    - { path: speed, label: Ground speed, format: number, precision: 0, suffix: ' kt' }
+    - { path: timestamp, label: Last seen, format: datetime }
+
 transport:
   type: http_poll
   # api.adsb.lol/v2/mil answers HTTP 200 with an EMPTY `ac` array ("total": 0) — the endpoint
@@ -31,7 +57,6 @@ parser:
 entity:
   external_id: 'hex'
   name: 'flight'
-  category: 'aircraft'
   metadata:
     callsign: 'flight'
     registration: 'r'

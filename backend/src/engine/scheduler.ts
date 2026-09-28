@@ -11,6 +11,7 @@ import { parsePayload } from './parsers';
 import { SourceConfig, loadSourcesFromDir, parseDurationSeconds } from './yaml-loader';
 import { isStreamTransport } from './transport-config';
 import { StreamHandle, fetchHttpRecords, startStream } from './transports';
+import { saveSourcePresentation } from './source-presentation';
 
 /** Retention cap for `append` sources: newest N observations kept per entity. */
 export const MAX_OBS_PER_ENTITY = 200;
@@ -87,6 +88,7 @@ export class IngestionScheduler {
           parseDurationSeconds(config.transport.interval, 60),
           config.enabled !== false ? 1 : 0
         );
+        saveSourcePresentation(this.db, config);
         registered.push(config);
       } catch (err) {
         console.error(`Failed to register source ${config.name}; it will not be polled:`, err);

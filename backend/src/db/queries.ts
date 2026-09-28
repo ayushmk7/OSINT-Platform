@@ -54,8 +54,20 @@ export function parseJsonObject(value: unknown): Record<string, unknown> {
 
 type Row = Record<string, unknown>;
 
+/** `layer` / `display` are JSON TEXT; null when the row predates them. */
+function parseJsonOrNull(value: unknown): Record<string, unknown> | null {
+  if (value === null || value === undefined) return null;
+  const parsed = parseJsonObject(value);
+  return Object.keys(parsed).length > 0 ? parsed : null;
+}
+
 export function serializeSource(row: Row): Row {
-  return { ...row, enabled: Boolean(row.enabled) };
+  return {
+    ...row,
+    enabled: Boolean(row.enabled),
+    layer: parseJsonOrNull(row.layer),
+    display: parseJsonOrNull(row.display)
+  };
 }
 
 export function serializeEntity(row: Row): Row {
@@ -185,11 +197,15 @@ export function getInitialSnapshot(perCategory = 300): Row[] {
   return (
     db
       .prepare(
-        `SELECT id, source_id, category, name, latitude, longitude, altitude, timestamp, metadata
+        `SELECT id, source_id, category, name, latitude, longitude, altitude, timestamp, metadata,
+         (SELECT o.heading FROM observations o WHERE o.entity_id = ranked.id
+            ORDER BY o.timestamp DESC LIMIT 1) AS heading,
+         (SELECT o.speed FROM observations o WHERE o.entity_id = ranked.id
+            ORDER BY o.timestamp DESC LIMIT 1) AS speed
        FROM (
          SELECT *, ROW_NUMBER() OVER (PARTITION BY category ORDER BY timestamp DESC) AS rn
          FROM entities
-       )
+       ) AS ranked
        WHERE rn <= ?`
       )
       .all(perCategory) as Row[]

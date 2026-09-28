@@ -5,18 +5,20 @@ import {
   Collapse,
   FormControlLabel,
   IconButton,
+  InputBase,
   Switch,
   Tooltip
 } from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useAppDispatch, useAppSelector } from '../store';
 import { toggleSourceEnabled } from '../store/slices/sourcesSlice';
 import { setActiveCategoryFilter } from '../store/slices/entitiesSlice';
-import { MARKER_CATEGORIES, colorForCategory } from './globeMarkers';
 import { hud, eyebrow, monoValue } from '../theme';
-import { HudPanel, CategoryGlyph, CATEGORY_META, categoryLabel } from './HudPrimitives';
+import { HudPanel, CategoryGlyph } from './HudPrimitives';
+import { buildLegend, countByLayer, filterLegend, type LegendLayer } from './legend';
 
 export interface LayerControlDrawerProps {
   /** Expanded panel vs. the collapsed "Layers" launcher. */
@@ -27,10 +29,15 @@ export interface LayerControlDrawerProps {
 
 const numberFormat = new Intl.NumberFormat('en-US');
 
+/** Show the quick-filter box once the legend has more layers than fit comfortably. */
+const FILTER_MIN_LAYERS = 8;
+
 /**
- * Persistent Layers panel, doubling as the map legend. Each row shows the category's real
- * marker glyph, its name + description and live count; clicking a row isolates that layer
- * (the same `activeCategoryFilter` the globe reads), clicking it again shows everything.
+ * Persistent Layers panel, doubling as the map legend. The legend is built from the sources'
+ * `layer` blocks, grouped by `layer.group` (collapsible), each row showing the layer's real
+ * marker glyph, name + description and live count; clicking a row isolates that layer id (the
+ * same `activeCategoryFilter` the globe reads), clicking it again shows everything. Scales to
+ * dozens of layers: the list scrolls, groups collapse, and a quick filter narrows it.
  * Data-source switches below map 1:1 to `toggleSourceEnabled`.
  *
  * Positioning is owned by the parent (App) — this component only renders the surface.
@@ -42,18 +49,22 @@ export const LayerControlDrawer: FC<LayerControlDrawerProps> = ({ open, onClose,
   const activeCategory = useAppSelector((state) => state.entities.activeCategoryFilter);
   const entities = useAppSelector((state) => state.entities.entities);
   const [sourcesOpen, setSourcesOpen] = useState(true);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [query, setQuery] = useState('');
 
   // Live per-layer counts, so a layer that is on but empty is visibly different from one that
   // is simply switched off.
-  const { counts, total } = useMemo(() => {
-    const tally: Record<string, number> = {};
-    let n = 0;
-    for (const ent of Object.values(entities)) {
-      tally[ent.category] = (tally[ent.category] ?? 0) + 1;
-      n += 1;
-    }
-    return { counts: tally, total: n };
-  }, [entities]);
+  const { groups, total, layerCount } = useMemo(() => {
+    const counts = countByLayer(entities, sources);
+    const all = buildLegend(sources, counts);
+    return {
+      groups: all,
+      total: Object.keys(entities).length,
+      layerCount: all.reduce((n, g) => n + g.layers.length, 0)
+    };
+  }, [entities, sources]);
+  const visibleGroups = useMemo(() => filterLegend(groups, query), [groups, query]);
+  const filtering = query.trim() !== '';
 
   const sourceList = Object.values(sources);
 
@@ -150,64 +161,90 @@ export const LayerControlDrawer: FC<LayerControlDrawerProps> = ({ open, onClose,
           </Box>
         </Box>
 
-        <Box role="list" sx={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          {MARKER_CATEGORIES.map((cat) => {
-            const isActive = activeCategory === cat;
-            const isHidden = activeCategory !== null && !isActive;
-            const count = counts[cat] ?? 0;
-            const color = colorForCategory(cat);
-            return (
-              <Box role="listitem" key={cat}>
-                <ButtonBase
-                  aria-pressed={isActive}
-                  onClick={() => dispatch(setActiveCategoryFilter(isActive ? null : cat))}
+        {layerCount >= FILTER_MIN_LAYERS && (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.75,
+              mx: 1,
+              mb: 1,
+              px: 1,
+              height: 30,
+              borderRadius: '8px',
+              bgcolor: hud.surfaceHover,
+              border: `1px solid ${hud.hairline}`
+            }}
+          >
+            <SearchIcon sx={{ fontSize: 16, color: hud.textMuted }} />
+            <InputBase
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={`Filter ${layerCount} layers`}
+              inputProps={{ 'aria-label': 'filter layers' }}
+              sx={{ flexGrow: 1, fontSize: '0.8125rem', color: hud.textPrimary }}
+            />
+          </Box>
+        )}
+
+        {visibleGroups.map((group) => {
+          const isOpen = filtering || !collapsed[group.name];
+          return (
+            <Box key={group.name} sx={{ mb: 0.5 }}>
+              <ButtonBase
+                onClick={() => setCollapsed((c) => ({ ...c, [group.name]: !c[group.name] }))}
+                aria-expanded={isOpen}
+                aria-label={`${group.name} group`}
+                sx={{
+                  ...eyebrow,
+                  width: '100%',
+                  px: 1,
+                  py: 0.5,
+                  borderRadius: '6px',
+                  gap: 0.5,
+                  '&:hover': { bgcolor: hud.surfaceHover }
+                }}
+              >
+                <ExpandMoreIcon
                   sx={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1.25,
-                    px: 1,
-                    py: 0.75,
-                    borderRadius: '8px',
-                    textAlign: 'left',
-                    opacity: isHidden ? 0.42 : 1,
-                    bgcolor: isActive ? `${color}14` : 'transparent',
-                    boxShadow: isActive ? `inset 0 0 0 1px ${color}40` : 'none',
-                    transition: 'background-color 120ms, opacity 120ms',
-                    '&:hover': { bgcolor: isActive ? `${color}1f` : hud.surfaceHover, opacity: 1 }
+                    fontSize: 14,
+                    transition: 'transform 150ms',
+                    transform: isOpen ? 'none' : 'rotate(-90deg)'
                   }}
+                />
+                <span>{group.name}</span>
+                <Box component="span" sx={{ color: hud.textMuted, letterSpacing: 0 }}>
+                  · {group.layers.length}
+                </Box>
+                <Box
+                  component="span"
+                  sx={{ ml: 'auto', ...monoValue, letterSpacing: 0, color: hud.textSecondary }}
                 >
-                  <CategoryGlyph category={cat} />
-                  <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-                    <Box
-                      sx={{
-                        fontSize: '0.8125rem',
-                        fontWeight: 500,
-                        color: hud.textPrimary,
-                        lineHeight: 1.3
-                      }}
-                    >
-                      {categoryLabel(cat)}
-                    </Box>
-                    <Box sx={{ fontSize: '0.6875rem', color: hud.textSecondary, lineHeight: 1.3 }}>
-                      {CATEGORY_META[cat]?.description ?? 'Tracked entities'}
-                    </Box>
-                  </Box>
-                  <Box
-                    component="span"
-                    sx={{
-                      ...monoValue,
-                      fontSize: '0.75rem',
-                      color: count > 0 ? hud.textPrimary : hud.textMuted
-                    }}
-                  >
-                    {numberFormat.format(count)}
-                  </Box>
-                </ButtonBase>
-              </Box>
-            );
-          })}
-        </Box>
+                  {numberFormat.format(group.count)}
+                </Box>
+              </ButtonBase>
+              <Collapse in={isOpen} unmountOnExit>
+                <Box role="list" sx={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  {group.layers.map((layer) => (
+                    <LegendRow
+                      key={layer.id}
+                      layer={layer}
+                      activeCategory={activeCategory}
+                      onToggle={(id) =>
+                        dispatch(setActiveCategoryFilter(activeCategory === id ? null : id))
+                      }
+                    />
+                  ))}
+                </Box>
+              </Collapse>
+            </Box>
+          );
+        })}
+        {filtering && visibleGroups.length === 0 && (
+          <Box sx={{ fontSize: '0.75rem', color: hud.textMuted, px: 1, py: 1 }}>
+            No layer matches “{query.trim()}”.
+          </Box>
+        )}
 
         <Box sx={{ height: '1px', bgcolor: hud.hairline, mx: 1, my: 1.25 }} />
 
@@ -269,5 +306,80 @@ export const LayerControlDrawer: FC<LayerControlDrawerProps> = ({ open, onClose,
         </Collapse>
       </Box>
     </HudPanel>
+  );
+};
+
+/** One legend row: glyph, name + description, live count. Click isolates the layer. */
+const LegendRow: FC<{
+  layer: LegendLayer;
+  activeCategory: string | null;
+  onToggle: (id: string) => void;
+}> = ({ layer, activeCategory, onToggle }) => {
+  const isActive = activeCategory === layer.id;
+  const isHidden = activeCategory !== null && !isActive;
+  const { color, count } = layer;
+  return (
+    <Box role="listitem">
+      <ButtonBase
+        aria-pressed={isActive}
+        onClick={() => onToggle(layer.id)}
+        sx={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.25,
+          px: 1,
+          py: 0.75,
+          borderRadius: '8px',
+          textAlign: 'left',
+          opacity: isHidden ? 0.42 : 1,
+          bgcolor: isActive ? `${color}14` : 'transparent',
+          boxShadow: isActive ? `inset 0 0 0 1px ${color}40` : 'none',
+          transition: 'background-color 120ms, opacity 120ms',
+          '&:hover': { bgcolor: isActive ? `${color}1f` : hud.surfaceHover, opacity: 1 }
+        }}
+      >
+        <CategoryGlyph category={layer.id} icon={layer.icon} color={color} />
+        <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+          <Box
+            sx={{
+              fontSize: '0.8125rem',
+              fontWeight: 500,
+              color: hud.textPrimary,
+              lineHeight: 1.3,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {layer.name}
+          </Box>
+          {layer.description && (
+            <Box
+              sx={{
+                fontSize: '0.6875rem',
+                color: hud.textSecondary,
+                lineHeight: 1.3,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {layer.description}
+            </Box>
+          )}
+        </Box>
+        <Box
+          component="span"
+          sx={{
+            ...monoValue,
+            fontSize: '0.75rem',
+            color: count > 0 ? hud.textPrimary : hud.textMuted
+          }}
+        >
+          {numberFormat.format(count)}
+        </Box>
+      </ButtonBase>
+    </Box>
   );
 };

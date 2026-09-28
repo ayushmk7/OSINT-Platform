@@ -62,18 +62,23 @@ describe('YAML Source Loader', () => {
     expect(loadSourcesFromDir(path.join(sourcesDir, '__nope__'))).toEqual([]);
   });
 
-  it('should only use canonical entity categories across all source definitions', () => {
+  it('gives every shipped source a declared layer + display, with category = layer id', () => {
     const sources = loadSourcesFromDir(sourcesDir);
     for (const source of sources) {
       expect(isEntityCategory(source.entity.category)).toBe(true);
+      expect(source.layer).toBeDefined();
+      expect(source.display?.declared).toBe(true);
+      expect(source.entity.category).toBe(source.layer?.id);
     }
   });
 
-  it('exposes atc_zone as part of the canonical category enum', () => {
+  it('keeps the legacy category list exported; any snake_case id is a valid category', () => {
     expect(ENTITY_CATEGORIES).toContain('atc_zone');
     expect(new Set(ENTITY_CATEGORIES).size).toBe(ENTITY_CATEGORIES.length);
     expect(isEntityCategory('atc_zone')).toBe(true);
-    expect(isEntityCategory('not_a_category')).toBe(false);
+    expect(isEntityCategory('wildfires_viirs')).toBe(true);
+    expect(isEntityCategory('Not-A-Category')).toBe(false);
+    expect(isEntityCategory('')).toBe(false);
   });
 
   it('parses the ATC facilities source with its filters and derived fields', () => {

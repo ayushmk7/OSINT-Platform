@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useDispatch } from 'react-redux';
-import { setInitialEntities, upsertEntity, type EntityRecord } from '../store/slices/entitiesSlice';
-import { setSources, type SourceRecord } from '../store/slices/sourcesSlice';
+import {
+  removeEntities,
+  setInitialEntities,
+  upsertEntity,
+  type EntityRecord
+} from '../store/slices/entitiesSlice';
+import { mergeSources, setSources, type SourceRecord } from '../store/slices/sourcesSlice';
 
 /** Canonical telemetry path — must match `WS_PATH` in the backend WebSocket server. */
 export const WS_TELEMETRY_PATH = '/ws/telemetry';
@@ -29,6 +34,8 @@ interface TelemetryFrame {
   data?: {
     entities?: EntityRecord[];
     sources?: SourceRecord[];
+    /** `entity_remove`: ids deleted server-side (ttl expiry). */
+    ids?: string[];
   } & Partial<EntityRecord>;
 }
 
@@ -109,6 +116,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): WebSocketState 
           if (payload.data.entities) dispatch(setInitialEntities(payload.data.entities));
         } else if (payload.type === 'entity_update' && payload.data) {
           dispatch(upsertEntity(payload.data as EntityRecord));
+        } else if (payload.type === 'entity_remove' && Array.isArray(payload.data?.ids)) {
+          dispatch(removeEntities(payload.data.ids));
+        } else if (payload.type === 'source_update' && payload.data?.sources) {
+          dispatch(mergeSources(payload.data.sources));
         } else if (payload.type === 'ping') {
           // Application-level heartbeat: browsers cannot answer protocol pings from JS.
           ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));

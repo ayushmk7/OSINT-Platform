@@ -14,6 +14,13 @@ export type RecordingMode = (typeof RECORDING_MODES)[number];
 
 /** `parser.format` values the engine can parse. */
 export const PARSER_FORMATS = ['json', 'geojson', 'xml', 'csv', 'rss', 'tle', 'omm_json'] as const;
+import {
+  LAYER_ID_PATTERN,
+  ResolvedDisplay,
+  ResolvedLayer,
+  resolveLayerDisplay,
+  validateLayerDisplay
+} from './layer-display';
 
 /** `schema_version` values this engine understands. Absent is treated as 1. */
 export const SUPPORTED_SCHEMA_VERSIONS = [1] as const;
@@ -29,8 +36,10 @@ export const SCALABLE_OBSERVATION_FIELDS = [
 export type ScalableObservationField = (typeof SCALABLE_OBSERVATION_FIELDS)[number];
 
 /**
- * The canonical `entities.category` enum. This is the ONE place the list lives on the
- * backend — source YAML, the tests and the frontend union all mirror these exact strings.
+ * The LEGACY category list. `entities.category` is no longer a closed enum — any lowercase
+ * snake_case string is a valid category / layer id (see `layer-display.ts`) — but these six keep
+ * their hand-drawn frontend styles, which the globe falls back to for a source that declares no
+ * `display:` block.
  */
 export const ENTITY_CATEGORIES = [
   'satellite',
@@ -40,10 +49,17 @@ export const ENTITY_CATEGORIES = [
   'maritime',
   'atc_zone'
 ] as const;
+export const LEGACY_ENTITY_CATEGORIES = ENTITY_CATEGORIES;
 
-export type EntityCategory = (typeof ENTITY_CATEGORIES)[number];
+export type EntityCategory = string;
 
+/** Any lowercase snake_case id is a valid category. */
 export function isEntityCategory(value: unknown): value is EntityCategory {
+  return typeof value === 'string' && LAYER_ID_PATTERN.test(value);
+}
+
+/** One of the six categories the frontend has a legacy (non-data-driven) style for. */
+export function isLegacyEntityCategory(value: unknown): boolean {
   return typeof value === 'string' && (ENTITY_CATEGORIES as readonly string[]).includes(value);
 }
 
@@ -144,6 +160,10 @@ export interface SourceConfig {
     /** Ignore records whose source timestamp is older than this ('30m', '7d', seconds). */
     max_age?: string | number;
   };
+  /** Legend layer. Always present (defaults applied) on a config returned by the loader. */
+  layer?: ResolvedLayer;
+  /** Marker style + entity card. Always present (defaults applied) after loading. */
+  display?: ResolvedDisplay;
 }
 
 /**
@@ -259,6 +279,7 @@ export function validateSourceConfig(config: unknown): string[] {
     }
   }
 
+  errors.push(...validateLayerDisplay(c));
   errors.push(...validateParsingAndRecording(c));
   return errors;
 }
@@ -374,15 +395,13 @@ export function loadSourcesFromDir(dirPath: string): SourceConfig[] {
         }
         // File-backed lookup tables are read once here; a missing file skips the source.
         if (parsed.lookups !== undefined) parsed.lookups = resolveLookups(parsed.lookups, dirPath);
-        // A non-canonical category still loads (the engine is data-driven and must not
-        // hard-fail on a new layer), but it is surfaced loudly because the frontend has no
-        // marker for it.
-        if (parsed.entity.category !== undefined && !isEntityCategory(parsed.entity.category)) {
-          console.warn(
-            `Source ${parsed.name}: non-canonical entity.category "${parsed.entity.category}" ` +
-              `(expected one of: ${ENTITY_CATEGORIES.join(', ')})`
-          );
-        }
+        const { layer, display } = resolveLayerDisplay(raw as Record<string, unknown>, (message) =>
+          console.warn(`Source ${parsed.name}: ${message}`)
+        );
+        parsed.layer = layer;
+        parsed.display = display;
+        // The layer id doubles as the entity category unless the source overrides it.
+        if (parsed.entity.category === undefined) parsed.entity.category = layer.id;
         configs.push(parsed);
       } else {
         console.error(`Skipping invalid source definition ${filePath}: ${errors.join('; ')}`);

@@ -4,6 +4,9 @@ let dbSingleton: Database.Database | null = null;
 
 export function initDatabase(dbPath: string = 'mk-osint.db'): Database.Database {
   const db = new Database(dbPath);
+  // Must precede the first CREATE TABLE: on a brand-new file this lets the retention job hand
+  // pruned pages back to the OS with `PRAGMA incremental_vacuum`. A no-op on existing files.
+  db.pragma('auto_vacuum = INCREMENTAL');
   db.pragma('journal_mode = WAL');
 
   db.exec(`
@@ -57,6 +60,15 @@ export function initDatabase(dbPath: string = 'mk-osint.db'): Database.Database 
     CREATE UNIQUE INDEX IF NOT EXISTS ux_observations_entity_timestamp
         ON observations(entity_id, timestamp);
   `);
+
+  // Additive migration: per-source legend layer + display config (JSON), written by the
+  // scheduler from the YAML `layer:` / `display:` blocks.
+  const sourceColumns = new Set(
+    (db.prepare('PRAGMA table_info(sources)').all() as Array<{ name: string }>).map((c) => c.name)
+  );
+  for (const column of ['layer', 'display']) {
+    if (!sourceColumns.has(column)) db.exec(`ALTER TABLE sources ADD COLUMN ${column} TEXT`);
+  }
 
   dbSingleton = db;
   return db;
