@@ -52,3 +52,18 @@ export function toRecordArray(target: unknown): unknown[] {
   if (target && typeof target === 'object') return [target];
   return [];
 }
+
+/**
+ * fast-xml-parser entity limits. Its default caps TOTAL entity replacements at 1000, and even
+ * plain `&amp;` / `&lt;` count, so a large legitimate feed (CISA advisories: ~40k escaped
+ * characters) fails to parse. Raise that cap only; the protections against entity-expansion
+ * attacks (DOCTYPE entity size/count, nesting depth, expanded length) keep their defaults.
+ */
+export const ENTITY_LIMITS = {
+  enabled: true,
+  maxTotalExpansions: 1_000_000,
+  maxExpansionDepth: 10,
+  maxEntitySize: 10_000,
+  maxEntityCount: 1000,
+  maxExpandedLength: 100_000
+};

@@ -74,6 +74,7 @@ All are optional and read by `backend/src/index.ts`. The template is [`backend/.
 | `MKOSINT_APP_NAME` | `MK-OSINT` | Browser tab title, delivered through `/config.json`. |
 | `MKOSINT_CESIUM_ION_TOKEN` | unset | Cesium ion access token, delivered through `/config.json` and set as `Cesium.Ion.defaultAccessToken`. Browser-visible by design. |
 | `MKOSINT_DEFAULT_GLOBE_STYLE` | `tactical` | Initial globe style: `tactical`, `blue_marble`, `night_lights`, `neon_vector`, `terrain_relief` or `holographic`. Unknown values are ignored. |
+| `MKOSINT_FEED_MAX_AGE` | `14d` | Feed items published longer ago than this (`36h`, `30d`, seconds) are ignored and pruned. Each feed source also keeps only its newest 500 items. |
 | `MKOSINT_DB_MAX_MB` | `500` | Database size ceiling for the retention job. Above it, the oldest observations are pruned until usage is under 90%, then `PRAGMA incremental_vacuum` runs. `0` disables the guard. Shrinking the file on disk needs a database created by this version (`auto_vacuum = INCREMENTAL`). |
 
 `dotenv` loads `.env` from the process working directory. With the npm scripts that is `backend/`, so put overrides in `backend/.env` (it is gitignored) or export them in your shell:

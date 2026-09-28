@@ -1,0 +1,40 @@
+# Total US public debt outstanding ("Debt to the Penny", US Treasury Fiscal Data, daily). The
+# newest 60 business days form the history. Docs:
+# https://fiscaldata.treasury.gov/datasets/debt-to-the-penny/debt-to-the-penny
+schema_version: 1
+name: indicator_us_debt
+source_type: treasury_fiscal_data
+layer_type: economy
+display_name: 'US Treasury debt to the penny'
+enabled: true
+kind: indicator
+
+layer:
+  id: economy
+  name: Economy
+  group: Other
+  description: US Treasury fiscal data
+
+display:
+  icon: dot
+  color: '#80cbc4'
+
+transport:
+  type: http_poll
+  url: 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/debt_to_penny?sort=-record_date&page%5Bsize%5D=60&fields=record_date,tot_pub_debt_out_amt'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '30s'
+  interval: '6h'
+
+parser:
+  format: json
+  records_path: data
+
+indicator:
+  id: '="us_debt_total"'
+  label: '="US public debt"'
+  value: '=round(number(tot_pub_debt_out_amt) / 1000000000000, 4)'
+  unit: 'T USD'
+  timestamp: record_date

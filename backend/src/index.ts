@@ -8,6 +8,7 @@ import { setupWebSocketServer, WS_PATH } from './websocket/server';
 import { broadcaster } from './websocket/broadcaster';
 import { startRetention } from './engine/retention';
 import { startAnalysisEngine } from './analysis';
+import { startFeedRetention } from './feeds/store';
 
 dotenv.config();
 
@@ -27,8 +28,12 @@ const scheduler = new IngestionScheduler(db, SOURCES_DIR);
 // THE WIRE. Without this, sockets connect and receive `initial_state` but the globe never
 // updates, because nothing ever pushes a live frame.
 scheduler.onEntityUpdate = (entity) => broadcaster.broadcastEntityUpdate(entity);
+scheduler.onFeedItem = (item) => broadcaster.broadcastFeedItem(item);
+scheduler.onIndicator = (indicator) => broadcaster.broadcastIndicatorUpdate(indicator);
 
 let retention: { stop: () => void } | null = null;
+// Feed items: MKOSINT_FEED_MAX_AGE (default 14d) + newest 500 per source.
+const feedRetention = startFeedRetention(db);
 // AI analysis (analysis.d/). Inert — one info log — unless an LLM provider is configured.
 const analysisEngine = startAnalysisEngine(db, {
   onInsight: (insight) => broadcaster.broadcastAiInsight(insight)
@@ -54,6 +59,7 @@ function shutdown(signal: string): void {
   console.log(`Received ${signal}, shutting down...`);
   scheduler.stop();
   retention?.stop();
+  feedRetention.stop();
   analysisEngine?.stop();
   for (const client of wss.clients) {
     client.terminate();

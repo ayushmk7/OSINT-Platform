@@ -51,6 +51,8 @@ export interface SourceRecord {
   url: string;
   update_interval_sec: number;
   enabled: boolean;
+  /** `geo` (default), `feed` (news items, plotted only when located) or `indicator`. */
+  kind?: 'geo' | 'feed' | 'indicator';
   layer?: SourceLayer | null;
   display?: SourceDisplay | null;
 }

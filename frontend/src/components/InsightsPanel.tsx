@@ -249,6 +249,8 @@ export interface InsightsPanelProps {
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
+  /** Rendered inside another panel (the intel dock): no own glass surface or header. */
+  embedded?: boolean;
 }
 
 /**
@@ -257,7 +259,7 @@ export interface InsightsPanelProps {
  * selects its first linked entity and asks the globe to fly there; the chips target each
  * linked entity individually. Positioning is owned by the parent (App).
  */
-export const InsightsPanel: FC<InsightsPanelProps> = ({ open, onOpen, onClose }) => {
+export const InsightsPanel: FC<InsightsPanelProps> = ({ open, onOpen, onClose, embedded }) => {
   const dispatch = useAppDispatch();
   const items = useAppSelector((s) => s.insights.items);
   const status = useAppSelector((s) => s.insights.status);
@@ -332,6 +334,32 @@ export const InsightsPanel: FC<InsightsPanelProps> = ({ open, onOpen, onClose })
     );
   }
 
+  const list = (
+    <Box sx={{ overflowY: 'auto', minHeight: 0, flex: embedded ? 1 : undefined }}>
+      {items.length === 0 ? (
+        <EmptyState status={status} />
+      ) : (
+        <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+          {items.map((insight) => (
+            <InsightRow key={insight.id} insight={insight} now={now} />
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+
+  if (embedded) {
+    return (
+      <Box
+        role="region"
+        aria-label="AI insights"
+        sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}
+      >
+        {list}
+      </Box>
+    );
+  }
+
   return (
     <HudPanel
       role="region"
@@ -368,17 +396,7 @@ export const InsightsPanel: FC<InsightsPanelProps> = ({ open, onOpen, onClose })
           </IconButton>
         </Tooltip>
       </Box>
-      <Box sx={{ overflowY: 'auto', minHeight: 0 }}>
-        {items.length === 0 ? (
-          <EmptyState status={status} />
-        ) : (
-          <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
-            {items.map((insight) => (
-              <InsightRow key={insight.id} insight={insight} now={now} />
-            ))}
-          </Box>
-        )}
-      </Box>
+      {list}
     </HudPanel>
   );
 };

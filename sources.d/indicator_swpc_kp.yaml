@@ -1,0 +1,40 @@
+# NOAA SWPC planetary K-index (3-hourly, past 7 days). Every row is a history point; the newest
+# is the current value. Kp >= 5 is a geomagnetic storm (G1+).
+# Docs: https://www.swpc.noaa.gov/products/planetary-k-index
+schema_version: 1
+name: indicator_swpc_kp
+source_type: noaa_swpc
+layer_type: space_weather
+display_name: 'NOAA SWPC Kp index'
+enabled: true
+kind: indicator
+
+layer:
+  id: space_weather
+  name: Space weather
+  group: Space
+  description: NOAA Space Weather Prediction Center
+
+display:
+  icon: satellite
+  color: '#b388ff'
+
+transport:
+  type: http_poll
+  url: 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '15m'
+
+parser:
+  format: json
+
+indicator:
+  id: '="kp"'
+  label: '="Planetary Kp"'
+  value: '=number(Kp)'
+  # SWPC time tags are UTC without a zone suffix.
+  timestamp: "=concat(time_tag, 'Z')"
+  severity: "=value >= 7 ? 'critical' : value >= 5 ? 'high' : value >= 4 ? 'medium' : 'info'"

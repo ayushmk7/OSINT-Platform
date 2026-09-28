@@ -259,6 +259,68 @@ Errors: `500` with message `Failed to fetch observations`.
 
 ---
 
+### GET /api/feed
+
+Items from `kind: feed` sources, newest first by publish time.
+
+| Query | Meaning |
+| :-- | :-- |
+| `source` | Only this source id. |
+| `limit` | Page size, clamped to 1..500 (default 100). Non-numeric: `400`. |
+| `since` | Only items published strictly after this ISO 8601 time. Unparseable: `400`. |
+
+```json
+{
+  "limit": 100,
+  "items": [
+    {
+      "id": "feed_usgs_significant:urn:earthquake-usgs-gov:us:6000txpi",
+      "source_id": "feed_usgs_significant",
+      "item_id": "urn:earthquake-usgs-gov:us:6000txpi",
+      "title": "M 6.6 - 80 km ENE of Tadine, New Caledonia",
+      "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000txpi",
+      "summary": "PAGER - GREEN ...",
+      "published": "2026-09-26T21:30:07.826Z",
+      "tags": ["Past Week", "Magnitude 6"],
+      "severity": "high",
+      "latitude": -21.2982,
+      "longitude": 168.61,
+      "entity_id": "feed_usgs_significant:urn:earthquake-usgs-gov:us:6000txpi",
+      "first_seen": "2026-09-28T13:33:12.480Z"
+    }
+  ]
+}
+```
+
+`url` is an absolute http(s) link or `null`; `summary` is plain text (at most 600 characters) or
+`null`; `entity_id` names the globe entity when the item has coordinates.
+
+### GET /api/indicators
+
+Every indicator of the `kind: indicator` sources. Optional `source` query parameter.
+
+```json
+{
+  "indicators": [
+    {
+      "id": "indicator_swpc_kp:kp",
+      "source_id": "indicator_swpc_kp",
+      "indicator_id": "kp",
+      "label": "Planetary Kp",
+      "value": 1.33,
+      "unit": null,
+      "change": null,
+      "severity": "info",
+      "updated_at": "2026-09-28T09:00:00.000Z",
+      "history": [{ "t": "2026-09-21T00:00:00.000Z", "v": 1.67 }]
+    }
+  ]
+}
+```
+
+`history` holds up to 100 points, oldest first; the last one is the current value. `change` is
+the source-reported change (a percentage for the market sources), or `null`.
+
 ### GET /api/insights
 
 Insights produced by the AI analysis engine (see [data-sources.md](data-sources.md#ai-analyses-analysisd)), newest first. Returns an empty list when no LLM provider is configured and nothing was stored earlier. Defined in `backend/src/analysis/routes.ts`.
@@ -417,7 +479,8 @@ Sent once, right after the connection opens.
 }
 ```
 
-- `sources` holds every row of the `sources` table, in the same shape as `GET /api/sources` (including `layer` and `display`).
+- `sources` holds every row of the `sources` table, in the same shape as `GET /api/sources` (including `layer`, `display` and `kind`).
+- `feed` holds the newest 100 feed items and `indicators` every indicator, in the shapes of `GET /api/feed` and `GET /api/indicators`.
 - `entities` is a category-balanced snapshot: the newest 300 entities per category (`SNAPSHOT_PER_CATEGORY`). `metadata` is a parsed object, as in the REST responses. Each entity also carries `heading` and `speed` from its newest observation (`null` if it has none).
 
 If building the snapshot fails, the error is logged on the server and no `initial_state` frame is sent. The socket stays open.
@@ -468,6 +531,24 @@ Sent whenever the AI analysis engine stores a new insight. `data` is the same ob
 ```
 
 The frontend adds it to the Insights panel (`insightsSlice.addInsight`).
+
+#### `feed_item`
+
+One NEW item from a `kind: feed` source (the same object `GET /api/feed` returns). At most 50 per
+poll, oldest first. Edits to an already-known item are not re-announced.
+
+```json
+{
+  "type": "feed_item",
+  "timestamp": "2026-09-28T13:40:00.000Z",
+  "data": { "id": "feed_bbc_world:...", "title": "...", "severity": "info" }
+}
+```
+
+#### `indicator_update`
+
+An indicator whose value, label, severity or history changed (the same object
+`GET /api/indicators` returns, history included).
 
 #### `ping`
 

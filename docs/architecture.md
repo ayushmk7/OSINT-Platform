@@ -163,6 +163,18 @@ The scheduler's in-memory last-position cache is not cleared on expiry, so an ex
 - `resolveValue(obj, expr, ctx)` evaluates values starting with `=` as expressions; `expressionContext(config)` supplies the lookup tables. `isUnlocated(raw, config)` lets the scheduler count records dropped under `observation.optional`.
 - Records older than `recording.max_age` are dropped by the scheduler after mapping.
 
+### feeds (`src/feeds/`)
+
+`kind: feed` and `kind: indicator` sources. `config.ts` validates the `feed:` / `indicator:` blocks
+and gives such sources the `entity:` / `observation:` sections the geo pipeline expects;
+`mapper.ts` maps records through the shared path/expression resolver (HTML stripped, only http(s)
+links); `store.ts` owns the `feed_items` and `indicators` tables (created on first use) and their
+retention; `ingest.ts` is what `IngestionScheduler.ingestRecords` calls for non-geo sources. It
+stores items/readings, reports new feed items and changed indicators through
+`scheduler.onFeedItem` / `onIndicator` (wired to the broadcaster in `index.ts`), and hands
+located feed records back to the geo path so they become entities. `routes.ts` serves
+`GET /api/feed` and `GET /api/indicators`.
+
 ## Database schema
 
 Defined in `backend/src/db/database.ts`. The database runs in WAL mode (`journal_mode = WAL`). A new database file is created with `auto_vacuum = INCREMENTAL` so the retention job can shrink it; an existing file keeps its mode (delete it to switch). Tables are created with `CREATE TABLE IF NOT EXISTS` on every start. The only migration is additive: `layer` and `display` columns are added to `sources` when missing.
@@ -211,6 +223,18 @@ Also indexed: `idx_entities_source_id`.
 A unique index `ux_observations_entity_timestamp` on `(entity_id, timestamp)` enforces one observation per entity per instant. Together with the deterministic id and `INSERT OR IGNORE`, it prevents duplicate rows when a feed returns the same data on consecutive polls.
 
 Queries live in `backend/src/db/queries.ts`. All filters are bound as prepared-statement parameters. `getEntities()` and `getObservations()` return one page of rows plus `total`, a `COUNT(*)` over the same `WHERE` clause. `serializeSource()`, `serializeEntity()` and `serializeObservation()` (built on `parseJsonObject()`) turn `enabled` into a boolean and `metadata` / `raw_payload` into objects before rows leave the query layer. `getInitialSnapshot(perCategory)` uses `ROW_NUMBER() OVER (PARTITION BY category ORDER BY timestamp DESC)` to take the newest N entities per category, and adds each entity's latest `heading` and `speed` from its newest observation (null when it has none). This stops a high-frequency category such as aircraft from crowding the others out of the first paint.
+
+### `feed_items` and `indicators`
+
+`feed_items`: `id` (`<source>:<item id>`, primary key), `source_id`, `item_id`, `title`, `url`,
+`summary`, `published`, `tags` (JSON list), `severity`, `latitude`, `longitude`, `entity_id`,
+`first_seen`. Indexed on `(source_id, published)`. The newest 500 per source are kept, and
+nothing older than `MKOSINT_FEED_MAX_AGE` (a sweep runs every 10 minutes).
+
+`indicators`: `id` (`<source>:<indicator id>`), `source_id`, `indicator_id`, `label`, `value`,
+`unit`, `change`, `severity`, `updated_at`, `history` (JSON list of `{t, v}`, newest 100).
+
+`sources` has a `kind` column (`geo` / `feed` / `indicator`).
 
 ## REST API
 
@@ -310,7 +334,12 @@ Toggling a source in the layer drawer only changes `enabledSourceIds` in the bro
 | `LayerControlDrawer` | Left panel. The legend is built from the sources' `layer` blocks, grouped by `layer.group` in collapsible sections with per-group counts; each row shows the layer's icon, name, description and live count, and clicking it isolates that layer id. A quick filter box appears once there are 8 or more layers. Per-source switches sit below. Before any source declares a layer, the six legacy categories are listed. |
 | `EntityDetailsDrawer` | Right-hand, non-modal inspector for the selected entity. Shows the source's `display.fields` first (formatted), then the remaining metadata and the latest 25 observations loaded over REST. For `atc_zone` entities it shows a link out to LiveATC's search page. |
 | `PerformanceControls` | Bottom-left HUD with an FPS read-out measured on `requestAnimationFrame` and the LOD switch. |
-| `InsightsPanel` | Collapsible glass card (beside the layers column on desktop, under the top bar on phones) listing AI insights: attention chip, analysis, time-ago, title, summary. Loads `GET /api/insights` and `/status` on mount; live `ai_insight` frames arrive through `useWebSocket`. Clicking an insight sets `selectedEntityId` and dispatches `requestFlyTo`, which `GlobeView` observes to fly the camera there. The empty state explains how to enable analysis. |
+| `InsightsPanel` | AI insights: attention chip, analysis, time-ago, title, summary. Loads `GET /api/insights` and `/status` on mount; live `ai_insight` frames arrive through `useWebSocket`. Clicking an insight sets `selectedEntityId` and dispatches `requestFlyTo`, which `GlobeView` observes to fly the camera there. Rendered `embedded` in the intel dock. The empty state explains how to enable analysis. |
+| `IntelDock` | Right-hand glass panel with three tabs, Feed / Signals / AI, each with a count and a dot for the most urgent severity. Collapses to its tab strip. On tablet/desktop it fills the right column and the entity card takes its place while an entity is selected; on phones it sits under the top bar, collapsed by default. All three views stay mounted so they load once and keep their filters. |
+| `FeedPanel` | Feed items (newest first, severity bar, source, time-ago, summary). Source chips filter the list. Titles open the link in a new tab (`rel="noopener noreferrer"`); located items fly the globe there (`requestFlyTo` with the item's coordinates as fallback) and select their entity. |
+| `IndicatorsPanel` | Indicator tiles grouped by `layer.group`: label, value + unit, change arrow (source `change` as %, else the last history step), SVG sparkline of the history, severity tint. |
+| `SearchBox` | Header search (Cmd/Ctrl+K) over loaded entities (name, id, primitive metadata values) and feed titles/tags; arrow keys + Enter or click select and fly to; unlocated feed results open their link. Pure matcher in `search.ts`. |
+| `trails.ts` | `TrailLayer`: one `PolylineCollection` of fading trails (4 alpha buckets per trail) for entities of sources with `display.trail.enabled`, in the layer colour. Only trails whose length/last point/colour changed are rebuilt; filtered entities are hidden, removed ones freed. Trail length per source (`max_points`) is pushed into the entities slice (`setTrailLimits`). |
 
 The theme (`theme.ts`) is a dark MUI theme with a neon green primary (`#00ff9d`), magenta secondary (`#ff006e`) and a monospace font stack. `HUD_HEADER_HEIGHT` (48 px) is shared by the header and both drawers so the drawers always start below it.
 

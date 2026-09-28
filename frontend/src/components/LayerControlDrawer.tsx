@@ -66,7 +66,8 @@ export const LayerControlDrawer: FC<LayerControlDrawerProps> = ({ open, onClose,
   const visibleGroups = useMemo(() => filterLegend(groups, query), [groups, query]);
   const filtering = query.trim() !== '';
 
-  const sourceList = Object.values(sources);
+  // Indicator sources draw nothing on the globe, so they get no toggle here.
+  const sourceList = Object.values(sources).filter((src) => src.kind !== 'indicator');
 
   if (!open) {
     return (
@@ -258,7 +259,8 @@ export const LayerControlDrawer: FC<LayerControlDrawerProps> = ({ open, onClose,
             component="span"
             sx={{ ml: 'auto', ...monoValue, letterSpacing: 0, color: hud.textSecondary }}
           >
-            {enabledSourceIds.length}/{sourceList.length}
+            {sourceList.filter((src) => enabledSourceIds.includes(src.id)).length}/
+            {sourceList.length}
           </Box>
           <ExpandMoreIcon
             sx={{

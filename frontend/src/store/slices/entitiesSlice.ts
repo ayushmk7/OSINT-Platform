@@ -48,6 +48,11 @@ export interface EntitiesState {
   entities: Record<string, EntityRecord>;
   selectedEntityId: string | null;
   activeCategoryFilter: string | null;
+  /**
+   * Per-source trail length from `display.trail.max_points` (sources with trails enabled).
+   * Sources not listed keep MAX_TRAIL_POINTS.
+   */
+  trailLimits: Record<string, number>;
 }
 
 /** Trail points retained per entity (bounded so long-running sessions don't grow forever). */
@@ -56,7 +61,8 @@ export const MAX_TRAIL_POINTS = 20;
 const initialState: EntitiesState = {
   entities: {},
   selectedEntityId: null,
-  activeCategoryFilter: null
+  activeCategoryFilter: null,
+  trailLimits: {}
 };
 
 function pointOf(ent: EntityRecord): TrailPoint {
@@ -82,10 +88,13 @@ const entitiesSlice = createSlice({
       const ent = action.payload;
       const existing = state.entities[ent.id];
       const newTrail = existing?.trail ? [...existing.trail] : [];
-      newTrail.push(pointOf(ent));
-      if (newTrail.length > MAX_TRAIL_POINTS) {
-        newTrail.shift();
+      const last = newTrail[newTrail.length - 1];
+      // A re-sent, unmoved position adds no trail point.
+      if (!last || last.latitude !== ent.latitude || last.longitude !== ent.longitude) {
+        newTrail.push(pointOf(ent));
       }
+      const cap = state.trailLimits[ent.source_id] ?? MAX_TRAIL_POINTS;
+      if (newTrail.length > cap) newTrail.splice(0, newTrail.length - cap);
       state.entities[ent.id] = { ...ent, trail: newTrail };
     },
     /** Server-side ttl expiry (`entity_remove`) or client-side ttl pruning. */
@@ -100,6 +109,9 @@ const entitiesSlice = createSlice({
     },
     setActiveCategoryFilter(state, action: PayloadAction<string | null>) {
       state.activeCategoryFilter = action.payload;
+    },
+    setTrailLimits(state, action: PayloadAction<Record<string, number>>) {
+      state.trailLimits = action.payload;
     }
   }
 });
@@ -109,6 +121,7 @@ export const {
   upsertEntity,
   removeEntities,
   setSelectedEntityId,
-  setActiveCategoryFilter
+  setActiveCategoryFilter,
+  setTrailLimits
 } = entitiesSlice.actions;
 export default entitiesSlice.reducer;

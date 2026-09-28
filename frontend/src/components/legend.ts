@@ -96,6 +96,10 @@ export function buildLegend(
   for (const src of Object.values(sources)) {
     const layer = src.layer;
     if (!layer) continue;
+    // Non-geo sources live in the Feed / Indicators panels; a feed only earns a legend row
+    // once it has plotted located items.
+    if (src.kind === 'indicator') continue;
+    if (src.kind === 'feed' && !(counts[layer.id] > 0)) continue;
     let row = layers.get(layer.id);
     if (!row) {
       const display = src.display && src.display.declared !== false ? src.display : null;

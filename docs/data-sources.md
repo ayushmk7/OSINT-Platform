@@ -31,8 +31,11 @@ This page documents the schema as implemented in `backend/src/engine/yaml-loader
 | `transport` | object | **yes** | | How to fetch. See below. |
 | `parser` | object | **yes** | | How to split the response into records. |
 | `filter` | list | no | | Record-level predicates. |
-| `entity` | object | **yes** | | Identity and metadata mapping. |
-| `observation` | object | **yes** | | Position and kinematics mapping. |
+| `kind` | string | no | `geo` | `geo`, `feed` or `indicator`. See [Non-geo sources](#non-geo-sources-kind-feed-and-kind-indicator). |
+| `entity` | object | **yes** (`geo`) | | Identity and metadata mapping. Optional for `feed` / `indicator`. |
+| `observation` | object | **yes** (`geo`) | | Position and kinematics mapping. Optional for `feed` / `indicator`. |
+| `feed` | object | `kind: feed` | | Feed item mapping. |
+| `indicator` | object | `kind: indicator` | | Indicator reading mapping. |
 | `recording` | object | no | `{ mode: append }` | How observations are stored. |
 | `lookups` | map | no | | Named tables for the `lookup()` expression helper. See [lookups](#lookups). |
 
@@ -466,6 +469,65 @@ The resolved `display` also carries `declared` (false when the YAML had no `disp
 
 TTL is enforced twice: the backend's retention job deletes expired entities and their observations every 60 seconds and broadcasts `entity_remove`, and the frontend hides and drops expired entities on its own every 15 seconds.
 
+### Non-geo sources (`kind: feed` and `kind: indicator`)
+
+Not every source is a set of positions. `kind: feed` sources produce news or advisory items for
+the Feed panel; `kind: indicator` sources produce scalar readings (space weather, markets,
+catalog sizes) for the Signals panel. Transport, parser, `filter`, `lookups`, `layer` and
+`display` work exactly as for geo sources. Every mapping value is a path or an `=expression`,
+resolved by the same engine as `entity` / `observation`.
+
+`feed:`
+
+| Field | Required | Meaning |
+| :-- | :-- | :-- |
+| `id` | **yes** | Item identity. Items are de-duplicated by `<source>:<id>`; a changed title or summary updates the stored item without announcing it again. |
+| `title` | **yes** | Headline. HTML is stripped and entities are decoded. |
+| `url` | no | Link. Only absolute `http(s)` URLs are kept. |
+| `summary` | no | Plain text, HTML stripped, at most 600 characters. |
+| `published` | no | Publish time (ISO, RFC 822 or epoch). Defaults to the time the item was first seen. |
+| `tags` | no | A list or a single value. |
+| `severity` | no | `info` (default), `low`, `medium`, `high` or `critical`. |
+| `latitude`, `longitude` | no | Give both. When they resolve, the item is also plotted as an entity on the source's layer (see below). |
+
+Retention: each source keeps its newest 500 items, and items published more than
+`MKOSINT_FEED_MAX_AGE` ago (default `14d`) are ignored and pruned. Each poll announces at most 50
+new items as `feed_item` WebSocket frames.
+
+Located items run through the normal geo pipeline, so `display` (icon, colour, `ttl`, card
+`fields`) applies to them. Without explicit `entity:` / `observation:` blocks the loader derives
+them from `feed:` (`external_id: <feed.id>`, `name: <feed.title>`, metadata `url`, `published`,
+`severity`; `recording.mode: upsert`). Write them yourself to put other fields on the card, as
+`feed_gdacs_alerts.yaml` does.
+
+`indicator:`
+
+| Field | Required | Meaning |
+| :-- | :-- | :-- |
+| `id` | **yes** | Indicator identity within the source (use `'="kp"'` for a constant). |
+| `label` | **yes** | Tile label. |
+| `value` | **yes** | Numeric reading; a record whose value is not a finite number is skipped. |
+| `unit` | no | A **literal** string (`'km/s'`), or an `=expression`. |
+| `change` | no | Change reported by the source, shown as a percentage (e.g. 24h change). Without it the tile shows the difference between the last two history points. |
+| `severity` | no | As for feeds. In `severity` and `change`, `value` refers to the mapped reading unless the record has its own `value` field. |
+| `timestamp` | no | Reading time. Records with the same `id` become history points in time order and the newest is the current value, so one response can carry a whole series (Kp, X-ray flux). A reading already in the history is ignored. Without a timestamp every poll adds a point. |
+
+The latest reading plus the newest 100 history points are kept per indicator.
+
+```yaml
+kind: indicator
+parser: { format: json }
+indicator:
+  id: '="kp"'
+  label: '="Planetary Kp"'
+  value: '=number(Kp)'
+  timestamp: "=concat(time_tag, 'Z')"
+  severity: "=value >= 5 ? 'high' : 'info'"
+```
+
+Indicator sources do not appear in the map legend or the layer drawer's source toggles; feed
+sources appear in the legend only once they have plotted items.
+
 ## Worked example
 
 `sources.d/usgs_earthquakes.yaml` polls the USGS past-hour earthquake feed every minute:
@@ -563,6 +625,24 @@ These five files are loaded by default.
 Each shipped layer id equals its legacy category, so `entity.category` is left to default to it.
 
 `atc_facilities.yaml` is the only shipped file that uses `filter` and `entity.derived`. It computes `radius_km`, `zone_note` and `liveatc_url`. The radii are an illustrative stand-in sized by airport class, not real control-zone boundaries.
+
+### Feeds and indicators
+
+All were checked against the live endpoints; none needs a key.
+
+| File | Kind | Upstream |
+| :-- | :-- | :-- |
+| `feed_cisa_advisories.yaml` | feed | CISA cybersecurity and ICS advisories (RSS) |
+| `feed_cisa_kev.yaml` | feed | CISA Known Exploited Vulnerabilities, recent additions (JSON) |
+| `feed_krebs.yaml`, `feed_schneier.yaml`, `feed_bleepingcomputer.yaml`, `feed_thehackernews.yaml`, `feed_sans_isc.yaml`, `feed_ncsc_uk.yaml`, `feed_project_zero.yaml`, `feed_talos.yaml` | feed | Security news and research blogs (RSS / Atom) |
+| `feed_bbc_world.yaml`, `feed_aljazeera.yaml`, `feed_npr_world.yaml`, `feed_un_news.yaml` | feed | World news (RSS) |
+| `feed_gdacs_alerts.yaml` | feed + map | GDACS disaster alerts (XML with `gdacs:` fields), plotted and coloured by alert level |
+| `feed_usgs_significant.yaml` | feed + map | USGS significant earthquakes, past 30 days (Atom with GeoRSS) |
+| `indicator_swpc_kp.yaml`, `indicator_swpc_solar_wind.yaml`, `indicator_swpc_imf_bz.yaml`, `indicator_swpc_xray.yaml` | indicator | NOAA SWPC Kp index, solar wind speed, IMF Bz, GOES X-ray flux |
+| `indicator_cisa_kev_count.yaml` | indicator | Size of the CISA KEV catalog |
+| `indicator_crypto.yaml` | indicator | BTC / ETH / SOL in USD with 24h change (CoinGecko, keyless) |
+| `indicator_fx_usd.yaml` | indicator | USD reference rates from the ECB (Frankfurter) |
+| `indicator_us_debt.yaml` | indicator | US Treasury "Debt to the Penny" |
 
 ## Adding a source with the `onboard-source` skill
 

@@ -2,12 +2,17 @@ import { Server as HttpServer } from 'http';
 import WebSocket, { WebSocketServer } from 'ws';
 import { broadcaster } from './broadcaster';
 import { getAllSources, getInitialSnapshot } from '../db/queries';
+import { getDatabase } from '../db/database';
+import { listFeedItems, listIndicators } from '../feeds/store';
 
 /** Single canonical WS path — shared by server and client (the client uses the same string). */
 export const WS_PATH = '/ws/telemetry';
 
 /** Heartbeat cadence: ping every 30s, terminate a socket that missed the previous round. */
 export const HEARTBEAT_INTERVAL_MS = 30_000;
+
+/** Newest feed items included in `initial_state` (older ones: `GET /api/feed`). */
+export const SNAPSHOT_FEED_ITEMS = 100;
 
 /** Entities kept per category in the `initial_state` snapshot. */
 export const SNAPSHOT_PER_CATEGORY = 300;
@@ -40,11 +45,14 @@ export function setupWebSocketServer(
     try {
       const sources = getAllSources();
       const entities = getInitialSnapshot(perCategory);
+      const db = getDatabase();
+      const feed = listFeedItems(db, { limit: SNAPSHOT_FEED_ITEMS });
+      const indicators = listIndicators(db);
       ws.send(
         JSON.stringify({
           type: 'initial_state',
           timestamp: new Date().toISOString(),
-          data: { sources, entities }
+          data: { sources, entities, feed, indicators }
         })
       );
     } catch (err) {

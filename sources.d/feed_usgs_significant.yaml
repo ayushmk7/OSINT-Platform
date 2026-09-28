@@ -1,0 +1,51 @@
+# USGS significant earthquakes of the past 30 days (Atom). Listed in the Feed panel and plotted.
+# Docs: https://earthquake.usgs.gov/earthquakes/feed/v1.0/atom.php
+schema_version: 1
+name: feed_usgs_significant
+source_type: usgs_atom
+layer_type: significant_quakes
+display_name: 'USGS Significant Earthquakes'
+enabled: true
+kind: feed
+
+layer:
+  id: significant_quakes
+  name: Significant quakes
+  group: Hazards
+  description: USGS significant earthquakes, past 30 days
+
+display:
+  icon: quake
+  color: '#ff3b6b'
+  size: 1.3
+  ttl: '30d'
+  fields:
+    - { path: metadata.published, label: Origin time, format: datetime }
+    - { path: metadata.url, label: Event page, format: link }
+
+transport:
+  type: http_poll
+  url: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_month.atom'
+  method: GET
+  timeout: '20s'
+  interval: '15m'
+  retry:
+    max_attempts: 3
+    backoff: exponential
+    initial_delay: '2s'
+    max_delay: '30s'
+
+parser:
+  format: rss
+
+feed:
+  id: guid
+  title: title
+  url: link
+  summary: description
+  published: published
+  tags: categories
+  # "Significant" is USGS's own threshold (magnitude, felt reports, PAGER alert).
+  severity: '="high"'
+  latitude: lat
+  longitude: lon

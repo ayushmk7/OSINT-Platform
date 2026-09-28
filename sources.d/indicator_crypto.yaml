@@ -1,0 +1,54 @@
+# Crypto spot prices in USD with 24h change, from CoinGecko's keyless public API (rate-limited:
+# keep the interval at a few minutes). Docs: https://docs.coingecko.com/reference/simple-price
+schema_version: 1
+name: indicator_crypto
+source_type: coingecko
+layer_type: markets
+display_name: 'Crypto (CoinGecko)'
+enabled: true
+kind: indicator
+
+layer:
+  id: markets
+  name: Markets
+  group: Other
+  description: Crypto and FX reference rates
+
+display:
+  icon: dot
+  color: '#ffd54f'
+
+transport:
+  type: http_poll
+  url: 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true'
+  method: GET
+  headers:
+    Accept: 'application/json'
+  timeout: '20s'
+  interval: '5m'
+  retry:
+    max_attempts: 2
+    backoff: exponential
+    initial_delay: '10s'
+    max_delay: '60s'
+
+# {"bitcoin": {"usd": ...}, ...} -> one record per coin, the coin id in `coin`.
+parser:
+  format: json
+  object_to_records: true
+  key_field: coin
+
+lookups:
+  symbols:
+    bitcoin: BTC
+    ethereum: ETH
+    solana: SOL
+
+indicator:
+  id: coin
+  label: "=concat(lookup('symbols', coin, upper(coin)), ' / USD')"
+  value: '=number(usd)'
+  unit: 'USD'
+  change: '=round(usd_24h_change, 2)'
+  timestamp: last_updated_at
+  severity: "=abs(usd_24h_change) >= 10 ? 'high' : abs(usd_24h_change) >= 5 ? 'medium' : 'info'"

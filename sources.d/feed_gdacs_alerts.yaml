@@ -1,0 +1,95 @@
+# GDACS (Global Disaster Alert and Coordination System, EC-JRC) current disaster alerts.
+# kind: feed with coordinates: every alert is listed in the Feed panel AND plotted on the globe.
+# Data: CC BY 4.0, credit GDACS. Docs: https://www.gdacs.org/feed_reference.aspx
+schema_version: 1
+name: feed_gdacs_alerts
+source_type: gdacs
+layer_type: gdacs_alerts
+display_name: 'GDACS Disaster Alerts'
+enabled: true
+kind: feed
+
+layer:
+  id: gdacs_alerts
+  name: Disaster alerts
+  group: Hazards
+  description: GDACS floods, cyclones, quakes, droughts, fires
+
+display:
+  icon: alert
+  color: '#ffb300'
+  color_by:
+    field: metadata.alert_level
+    map: { Green: '#43d17a', Orange: '#ff9e00', Red: '#ff3b3b' }
+    default: '#ffb300'
+  size: 1.1
+  ttl: '14d'
+  fields:
+    - { path: metadata.alert_level, label: Alert level }
+    - { path: metadata.event_type, label: Event type }
+    - { path: metadata.country, label: Country }
+    - { path: metadata.published, label: Published, format: datetime }
+    - { path: metadata.url, label: Report, format: link }
+
+transport:
+  type: http_poll
+  url: 'https://www.gdacs.org/xml/rss.xml'
+  method: GET
+  timeout: '30s'
+  interval: '15m'
+  retry:
+    max_attempts: 2
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '30s'
+
+# The GDACS extension fields (alert level, event type, country) need the raw XML item, so this
+# uses the generic xml parser instead of the normalizing rss one.
+parser:
+  format: xml
+  records_path: rss.channel.item
+
+lookups:
+  event_types:
+    EQ: Earthquake
+    TC: Tropical cyclone
+    FL: Flood
+    VO: Volcano
+    DR: Drought
+    WF: Wildfire
+    TS: Tsunami
+  alert_severity:
+    Green: low
+    Orange: high
+    Red: critical
+
+feed:
+  id: "=concat($['gdacs:eventtype'], $['gdacs:eventid'], '-', $['gdacs:episodeid'])"
+  title: title
+  url: link
+  summary: description
+  published: pubDate
+  tags: "=lookup('event_types', $['gdacs:eventtype'], $['gdacs:eventtype'])"
+  severity: "=lookup('alert_severity', $['gdacs:alertlevel'], 'info')"
+  latitude: "=$['geo:Point']['geo:lat']"
+  longitude: "=$['geo:Point']['geo:long']"
+
+# Globe entity for each located alert (the card fields above read this metadata).
+entity:
+  external_id: "=concat($['gdacs:eventtype'], $['gdacs:eventid'], '-', $['gdacs:episodeid'])"
+  name: title
+  metadata:
+    alert_level: "=$['gdacs:alertlevel']"
+    event_type: "=lookup('event_types', $['gdacs:eventtype'], $['gdacs:eventtype'])"
+    country: "=$['gdacs:country']"
+    published: pubDate
+    url: link
+
+observation:
+  latitude: "=$['geo:Point']['geo:lat']"
+  longitude: "=$['geo:Point']['geo:long']"
+  timestamp: pubDate
+  optional: true
+
+recording:
+  mode: upsert

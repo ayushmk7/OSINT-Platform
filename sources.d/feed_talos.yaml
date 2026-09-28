@@ -1,0 +1,44 @@
+# Cisco Talos — RSS/Atom feed shown in the News/Feed panel (kind: feed, no map markers).
+schema_version: 1
+name: feed_talos
+source_type: rss
+layer_type: feed_talos
+display_name: 'Cisco Talos'
+enabled: true
+kind: feed
+
+layer:
+  id: feed_talos
+  name: 'Cisco Talos'
+  group: Cyber
+  description: 'Threat intelligence research'
+
+display:
+  icon: shield
+  color: '#81d4fa'
+
+transport:
+  type: http_poll
+  url: 'https://blog.talosintelligence.com/rss/'
+  method: GET
+  headers:
+    Accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.5'
+  timeout: '20s'
+  interval: '1h'
+  retry:
+    max_attempts: 2
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '30s'
+
+parser:
+  format: rss
+  max_records: 100
+
+feed:
+  id: '=guid ?? link'
+  title: title
+  url: link
+  summary: description
+  published: published
+  tags: categories

@@ -5,6 +5,7 @@ import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { useAppDispatch, useAppSelector } from '../store';
 import {
   setSelectedEntityId,
+  setTrailLimits,
   parseEntityMetadata,
   type EntityRecord
 } from '../store/slices/entitiesSlice';
@@ -21,6 +22,7 @@ import {
 import { GlobeStyleController } from './globeStyles';
 import { entityHeadingRad, entityLayerId, isExpired, resolveEntityStyle } from './layerStyle';
 import { useTtlPruner } from '../hooks/useTtlPruner';
+import { TrailLayer, trailLimitsFromSources } from './trails';
 
 // Gentle idle rotation, in radians per clock tick (~60fps). Stops on first interaction.
 const SPIN_PER_TICK = 0.0015;
@@ -130,6 +132,7 @@ export const GlobeView: FC = () => {
   const zonesById = useRef<Map<string, Cesium.Entity>>(new Map());
   const globeStyleRef = useRef<GlobeStyleController | null>(null);
   const ringRef = useRef<Cesium.Billboard | null>(null);
+  const trailsRef = useRef<TrailLayer | null>(null);
   // Image currently on each billboard, so a colour change (color_by) swaps the texture only
   // when it actually changed.
   const imageById = useRef<Map<string, string>>(new Map());
@@ -180,6 +183,8 @@ export const GlobeView: FC = () => {
     const billboards = viewer.scene.primitives.add(new Cesium.BillboardCollection());
     billboardsRef.current = billboards;
     viewerRef.current = viewer;
+    // Trails (display.trail) under the markers: one PolylineCollection for every entity.
+    trailsRef.current = new TrailLayer(viewer.scene);
 
     // Selection ring: one extra billboard in the same collection, moved onto whichever marker is
     // selected. Added first so it draws beneath the marker it surrounds.
@@ -248,6 +253,8 @@ export const GlobeView: FC = () => {
     return () => {
       if (hoverFrame) cancelAnimationFrame(hoverFrame);
       ringRef.current = null;
+      trailsRef.current?.destroy();
+      trailsRef.current = null;
       viewer.clock.onTick.removeEventListener(onTick);
       handler.destroy();
       byId.current.clear();
@@ -287,7 +294,12 @@ export const GlobeView: FC = () => {
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!flyTo || !viewer || viewer.isDestroyed()) return;
-    const target = entities[flyTo.entityId];
+    const entity = entities[flyTo.entityId];
+    const target =
+      entity ??
+      (flyTo.latitude !== undefined && flyTo.longitude !== undefined
+        ? { latitude: flyTo.latitude, longitude: flyTo.longitude, altitude: 0 }
+        : null);
     if (!target) return;
     spinningRef.current = false;
     viewer.camera.flyTo({
@@ -299,6 +311,11 @@ export const GlobeView: FC = () => {
       duration: 1.8
     });
   }, [flyTo]);
+
+  // Trail length per source follows `display.trail.max_points`.
+  useEffect(() => {
+    dispatch(setTrailLimits(trailLimitsFromSources(sources)));
+  }, [dispatch, sources]);
 
   // Upsert billboards whenever entities / filters / selection change.
   useEffect(() => {
@@ -400,6 +417,12 @@ export const GlobeView: FC = () => {
         zonesById.current.delete(id);
       }
     }
+    trailsRef.current?.sync(
+      entities,
+      sources,
+      visibleIds,
+      (e) => resolveEntityStyle(e, sources[e.source_id]).color
+    );
     const ring = ringRef.current;
     if (ring) {
       ring.show = selectedPosition !== null;

@@ -1,5 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
-import { IParser } from './types';
+import { ENTITY_LIMITS, IParser } from './types';
 
 /** One normalized feed item, regardless of RSS 2.0 / RSS 1.0 (RDF) / Atom input. */
 export interface FeedRecord {
@@ -23,6 +23,7 @@ const parser = new XMLParser({
   // Keep ids, titles etc. as text: "0123" must not become 123.
   parseTagValue: false,
   parseAttributeValue: false,
+  processEntities: ENTITY_LIMITS,
   isArray: (name) => ['item', 'entry', 'category', 'link'].includes(name)
 });
 

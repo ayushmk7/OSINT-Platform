@@ -65,6 +65,7 @@ export function serializeSource(row: Row): Row {
   return {
     ...row,
     enabled: Boolean(row.enabled),
+    kind: typeof row.kind === 'string' && row.kind !== '' ? row.kind : 'geo',
     layer: parseJsonOrNull(row.layer),
     display: parseJsonOrNull(row.display)
   };

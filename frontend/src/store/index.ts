@@ -4,6 +4,7 @@ import entitiesReducer from './slices/entitiesSlice';
 import sourcesReducer from './slices/sourcesSlice';
 import filterReducer from './slices/filterSlice';
 import insightsReducer from './slices/insightsSlice';
+import feedReducer from './slices/feedSlice';
 import { osintApi } from './api/osintApi';
 
 export const store = configureStore({
@@ -12,6 +13,7 @@ export const store = configureStore({
     sources: sourcesReducer,
     filter: filterReducer,
     insights: insightsReducer,
+    feed: feedReducer,
     [osintApi.reducerPath]: osintApi.reducer
   },
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(osintApi.middleware)

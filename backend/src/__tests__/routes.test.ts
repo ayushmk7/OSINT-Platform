@@ -272,7 +272,9 @@ describe('REST API — 404 and OpenAPI spec', () => {
       '/api/openapi.yaml',
       '/api/sources',
       '/api/entities',
-      '/api/observations'
+      '/api/observations',
+      '/api/feed',
+      '/api/indicators'
     ]) {
       expect(spec.paths[p]).toBeDefined();
     }

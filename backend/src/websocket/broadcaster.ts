@@ -57,6 +57,24 @@ export class TelemetryBroadcaster {
     );
   }
 
+  /** New item from a `kind: feed` source (same record `GET /api/feed` returns). */
+  public broadcastFeedItem(item: object): void {
+    this.sendToAll(
+      JSON.stringify({ type: 'feed_item', timestamp: new Date().toISOString(), data: item })
+    );
+  }
+
+  /** Changed reading from a `kind: indicator` source (same record `GET /api/indicators` returns). */
+  public broadcastIndicatorUpdate(indicator: object): void {
+    this.sendToAll(
+      JSON.stringify({
+        type: 'indicator_update',
+        timestamp: new Date().toISOString(),
+        data: indicator
+      })
+    );
+  }
+
   private sendToAll(message: string): void {
     for (const client of this.clients) {
       if (client.readyState === WebSocket.OPEN) {

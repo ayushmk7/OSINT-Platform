@@ -1,0 +1,44 @@
+# SANS ISC Diaries — RSS/Atom feed shown in the News/Feed panel (kind: feed, no map markers).
+schema_version: 1
+name: feed_sans_isc
+source_type: rss
+layer_type: feed_sans_isc
+display_name: 'SANS ISC Diaries'
+enabled: true
+kind: feed
+
+layer:
+  id: feed_sans_isc
+  name: 'SANS ISC Diaries'
+  group: Cyber
+  description: 'SANS Internet Storm Center handler diaries'
+
+display:
+  icon: shield
+  color: '#a5d6a7'
+
+transport:
+  type: http_poll
+  url: 'https://isc.sans.edu/rssfeed.xml'
+  method: GET
+  headers:
+    Accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.5'
+  timeout: '20s'
+  interval: '30m'
+  retry:
+    max_attempts: 2
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '30s'
+
+parser:
+  format: rss
+  max_records: 100
+
+feed:
+  id: '=guid ?? link'
+  title: title
+  url: link
+  summary: description
+  published: published
+  tags: categories

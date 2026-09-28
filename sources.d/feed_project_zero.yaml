@@ -1,0 +1,44 @@
+# Google Project Zero — RSS/Atom feed shown in the News/Feed panel (kind: feed, no map markers).
+schema_version: 1
+name: feed_project_zero
+source_type: rss
+layer_type: feed_project_zero
+display_name: 'Google Project Zero'
+enabled: true
+kind: feed
+
+layer:
+  id: feed_project_zero
+  name: 'Google Project Zero'
+  group: Cyber
+  description: 'Vulnerability research'
+
+display:
+  icon: bug
+  color: '#fff59d'
+
+transport:
+  type: http_poll
+  url: 'https://googleprojectzero.blogspot.com/feeds/posts/summary?max-results=25&alt=rss'
+  method: GET
+  headers:
+    Accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.5'
+  timeout: '20s'
+  interval: '2h'
+  retry:
+    max_attempts: 2
+    backoff: exponential
+    initial_delay: '5s'
+    max_delay: '30s'
+
+parser:
+  format: rss
+  max_records: 100
+
+feed:
+  id: '=guid ?? link'
+  title: title
+  url: link
+  summary: description
+  published: published
+  tags: categories
