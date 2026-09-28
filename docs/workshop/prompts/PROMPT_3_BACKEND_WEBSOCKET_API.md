@@ -2,7 +2,7 @@
 
 You are an expert Full-Stack Software Engineer specializing in Node.js, Express, TypeScript, SQLite (`better-sqlite3`), OpenAPI 3.0, and WebSockets (`ws`).
 
-Your task is to generate a Superpowers Spec and Implementation Plan, then execute Step 3 of the ReconVillage OSINT Platform: building the Express REST API endpoints (`/api/sources`, `/api/entities`, `/api/observations`) and real-time WebSocket server (`/ws/telemetry`) with telemetry event broadcasting and connection heartbeat handling.
+Your task is to generate a Superpowers Spec and Implementation Plan, then execute Step 3 of the MK-OSINT: building the Express REST API endpoints (`/api/sources`, `/api/entities`, `/api/observations`) and real-time WebSocket server (`/ws/telemetry`) with telemetry event broadcasting and connection heartbeat handling.
 
 ## Instructions & Constraints
 - **REST API Endpoint Routes**:
@@ -44,7 +44,7 @@ Your task is to generate a Superpowers Spec and Implementation Plan, then execut
 
 ## Input Data
 =============================================
-Project Target: ReconVillage Backend REST & WebSocket API
+Project Target: MK-OSINT backend REST & WebSocket API
 Stack: Node.js, Express, TypeScript, better-sqlite3, ws, OpenAPI 3.0
 
 REST API Endpoints Required:

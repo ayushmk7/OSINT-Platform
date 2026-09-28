@@ -1,8 +1,8 @@
-# ReconVillage Workshop Implementation Plan
+# MK-OSINT Workshop Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Create all ReconVillage Vibe-Coding Workshop artifacts: AGENTS.md, step-by-step PROMPT_N.md files, pre-built Superpowers specs/plans, and the custom source onboarding skill.
+**Goal:** Create all MK-OSINT Vibe-Coding Workshop artifacts: AGENTS.md, step-by-step PROMPT_N.md files, pre-built Superpowers specs/plans, and the custom source onboarding skill.
 
 **Architecture:** Generate structured markdown prompt instructions, pre-built specs and implementation plans, agent workflow context, and a custom skill file.
 

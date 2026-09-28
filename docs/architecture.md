@@ -24,7 +24,7 @@ flowchart LR
     HF --> PR[parsers<br/>json / geojson / xml / csv]
     PR --> FL[passesFilter]
     FL --> FM[field-mapper<br/>mapRecord]
-    FM --> DB[(SQLite<br/>recon.db)]
+    FM --> DB[(SQLite<br/>mk-osint.db)]
     SCH -->|onEntityUpdate<br/>new or moved only| BC[TelemetryBroadcaster]
     DB --> API[Express REST<br/>/api/*]
     DB --> WSS[WebSocket server<br/>/ws/telemetry]
@@ -96,7 +96,7 @@ After the transaction commits, `onEntityUpdate` is called for each changed entit
 
 ### http-fetcher (`http-fetcher.ts`)
 
-`fetchUrl()` uses the global `fetch` with an `AbortController` timeout. It sends `User-Agent: ReconVillage-OSINT/1.0` plus any configured headers, treats any non-2xx status as a failure, and returns the body as text. Failed attempts are retried after `retryDelayMs(attempt, backoff, initialDelayMs, maxDelayMs)`: `exponential` (`initialDelayMs * 2^(attempt-1)`), `linear` (`initialDelayMs * attempt`) or `fixed` (`initialDelayMs`), always capped at `maxDelayMs`. After the last attempt it throws the last error.
+`fetchUrl()` uses the global `fetch` with an `AbortController` timeout. It sends `User-Agent: MK-OSINT/1.0` plus any configured headers, treats any non-2xx status as a failure, and returns the body as text. Failed attempts are retried after `retryDelayMs(attempt, backoff, initialDelayMs, maxDelayMs)`: `exponential` (`initialDelayMs * 2^(attempt-1)`), `linear` (`initialDelayMs * attempt`) or `fixed` (`initialDelayMs`), always capped at `maxDelayMs`. After the last attempt it throws the last error.
 
 ### retry (`retry.ts`)
 

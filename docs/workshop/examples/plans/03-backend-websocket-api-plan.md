@@ -1,6 +1,6 @@
 # Implementation Plan: 03 - Backend REST & Real-Time WebSocket API
 
-This step-by-step TDD implementation plan details the creation of the Express REST API routes (`/api/sources`, `/api/entities`, `/api/observations`) and the real-time WebSocket server (`/ws/telemetry`) with telemetry broadcasting and heartbeat ping/pong management for ReconVillage.
+This step-by-step TDD implementation plan details the creation of the Express REST API routes (`/api/sources`, `/api/entities`, `/api/observations`) and the real-time WebSocket server (`/ws/telemetry`) with telemetry broadcasting and heartbeat ping/pong management for MK-OSINT.
 
 ---
 
@@ -575,7 +575,7 @@ This step-by-step TDD implementation plan details the creation of the Express RE
 
   const PORT = 4000; // single canonical port
 
-  initDatabase(process.env.DB_PATH || 'recon.db');
+  initDatabase(process.env.DB_PATH || 'mk-osint.db');
 
   const app = express();
   app.use(cors());
@@ -592,7 +592,7 @@ This step-by-step TDD implementation plan details the creation of the Express RE
   scheduler.start();
 
   server.listen(PORT, () => {
-    console.log(`ReconVillage backend on :${PORT} (ws ${WS_PATH})`);
+    console.log(`MK-OSINT backend on :${PORT} (ws ${WS_PATH})`);
   });
   ```
 

@@ -14,7 +14,7 @@ export interface FetchOptions {
   backoff?: BackoffStrategy;
 }
 
-const USER_AGENT = 'ReconVillage-OSINT/1.0';
+const USER_AGENT = 'MK-OSINT/1.0';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

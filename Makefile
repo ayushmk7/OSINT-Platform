@@ -1,7 +1,7 @@
 .PHONY: install dev build test lint format help
 
 help:
-	@echo "ReconVillage Workshop Automation Commands:"
+	@echo "MK-OSINT commands:"
 	@echo "  make install - Install all Node.js dependencies (root + workspaces)"
 	@echo "  make dev     - Launch backend and frontend dev servers"
 	@echo "  make build   - Compile backend and frontend web assets"

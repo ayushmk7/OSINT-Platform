@@ -1,7 +1,7 @@
 # Technical Specification: 06 - Full-Stack Integration, Sanity Check & Debug
 
 ## 1. Overview
-This specification defines the final integration and verification pass for the ReconVillage OSINT
+This specification defines the final integration and verification pass for the MK-OSINT
 Platform. Unlike steps 1–5, it produces no new features — it **proves the assembled system works
 end-to-end and fixes whatever does not.** It exists because unit tests passed while the running app
 was broken; this step replaces "tests are green" with "the running system was observed working,"

@@ -1,7 +1,7 @@
 # Technical Specification: 01 - Project Setup & Monorepo Foundation
 
 ## 1. Overview
-This specification details the foundational architecture for the ReconVillage OSINT Intelligence Platform. The objective of Step 1 is to establish a robust monorepo workspace containing a Node.js + Express + TypeScript backend connected to a SQLite database (`better-sqlite3`), an OpenAPI 3.0 API spec, and a Vite + React + MUI frontend that — on a tactical dark theme — renders a simple interactive **CesiumJS globe**, plus a top-level `Makefile` to unify development workflows.
+This specification details the foundational architecture for the MK-OSINT Intelligence Platform. The objective of Step 1 is to establish a robust monorepo workspace containing a Node.js + Express + TypeScript backend connected to a SQLite database (`better-sqlite3`), an OpenAPI 3.0 API spec, and a Vite + React + MUI frontend that — on a tactical dark theme — renders a simple interactive **CesiumJS globe**, plus a top-level `Makefile` to unify development workflows.
 
 **Why a globe already in step 1?** The globe is introduced at the end of the very first step on purpose. Steps 2–3 are entirely backend (ingestion engine, WebSocket API) with no visible output, so without this, students would build for a long stretch before seeing anything. Ending step 1 with a real spinning Earth gives them the payoff up front — "this is what you're building" — and step 4 then layers live telemetry onto **this same globe** rather than creating it from scratch. The step-1 globe has **no backend dependency** (its basemap needs no API key), so it runs standalone the moment setup is done.
 

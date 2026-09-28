@@ -1,6 +1,6 @@
 # Documentation
 
-Reference documentation for the ReconVillage OSINT platform and the workshop kit that builds it.
+Reference documentation for the MK-OSINT platform and the workshop kit that builds it.
 
 ## Platform
 

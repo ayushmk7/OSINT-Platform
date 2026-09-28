@@ -1,4 +1,4 @@
-# Design: ReconVillage Workshop — Harness Hardening
+# Design: MK-OSINT Workshop — Harness Hardening
 
 **Date:** 2026-07-27
 **Status:** Approved (drives edits to AGENTS.md, PROMPT_1..6, specs/01..06, plans/01..06)

@@ -1,7 +1,7 @@
 # Technical Specification: 03 - Backend REST & Real-Time WebSocket API
 
 ## 1. Overview
-This specification details the architecture for the backend REST API endpoints and real-time WebSocket telemetry server of the ReconVillage OSINT Platform. The system exposes REST endpoints for querying data sources, active entities (with category and spatial bounding box filtering), and historical observations stored in SQLite. Furthermore, it establishes a high-throughput WebSocket server on `/ws/telemetry` using the `ws` package, broadcasting live ingestion updates (`entity_update`, `observation`) and managing client socket health via heartbeat ping/pong protocol.
+This specification details the architecture for the backend REST API endpoints and real-time WebSocket telemetry server of the MK-OSINT. The system exposes REST endpoints for querying data sources, active entities (with category and spatial bounding box filtering), and historical observations stored in SQLite. Furthermore, it establishes a high-throughput WebSocket server on `/ws/telemetry` using the `ws` package, broadcasting live ingestion updates (`entity_update`, `observation`) and managing client socket health via heartbeat ping/pong protocol.
 
 ---
 
@@ -235,7 +235,7 @@ must compose everything so live updates actually flow:
 
 ```typescript
 const PORT = 4000;
-initDatabase(process.env.DB_PATH || 'recon.db');
+initDatabase(process.env.DB_PATH || 'mk-osint.db');
 
 const app = express();                          // mount the REST router; routes use getDatabase()
 app.use(cors());
@@ -249,7 +249,7 @@ const scheduler = new IngestionScheduler(getDatabase(), sourcesDir);
 scheduler.onEntityUpdate = (entity) => broadcaster.broadcastEntityUpdate(entity); // THE WIRE
 scheduler.start();
 
-server.listen(PORT, () => console.log(`ReconVillage backend on :${PORT} (ws ${WS_PATH})`));
+server.listen(PORT, () => console.log(`MK-OSINT backend on :${PORT} (ws ${WS_PATH})`));
 ```
 
 Without `scheduler.onEntityUpdate = …`, the socket connects but the map never updates.

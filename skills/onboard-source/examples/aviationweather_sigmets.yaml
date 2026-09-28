@@ -16,7 +16,7 @@ transport:
   method: GET
   headers:
     Accept: "application/json"
-    User-Agent: "vibe-coding-osint-platform/1.0"
+    User-Agent: "MK-OSINT/1.0"
   timeout: "15s"
   interval: "600s"
   retry:

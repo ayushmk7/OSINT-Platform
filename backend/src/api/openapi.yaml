@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: ReconVillage OSINT Platform API
+  title: MK-OSINT API
   description: >-
     RESTful API for querying telemetry sources, entities, and observations.
     Every response is a wrapped JSON object (never a bare array). `metadata` and

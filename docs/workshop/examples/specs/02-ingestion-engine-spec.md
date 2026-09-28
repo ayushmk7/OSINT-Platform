@@ -1,7 +1,7 @@
 # Technical Specification: 02 - Backend Declarative Ingestion Engine
 
 ## 1. Overview
-This specification details the architecture for the backend YAML Declarative Ingestion Engine of the ReconVillage OSINT Platform. The engine automatically discovers declarative `.yaml` source definitions in `sources.d/`, periodically polls external HTTP APIs (supporting JSON, GeoJSON, XML, and CSV data formats), normalizes raw record payloads into standardized `EntityRecord` and `ObservationRecord` structures, and persists telemetry state into SQLite database tables (`entities` and `observations`).
+This specification details the architecture for the backend YAML Declarative Ingestion Engine of the MK-OSINT. The engine automatically discovers declarative `.yaml` source definitions in `sources.d/`, periodically polls external HTTP APIs (supporting JSON, GeoJSON, XML, and CSV data formats), normalizes raw record payloads into standardized `EntityRecord` and `ObservationRecord` structures, and persists telemetry state into SQLite database tables (`entities` and `observations`).
 
 ---
 

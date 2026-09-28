@@ -1,6 +1,6 @@
 # Implementation Plan: 02 - Backend Declarative Ingestion Engine
 
-This step-by-step TDD implementation plan details the creation of the backend YAML Declarative Ingestion Engine for ReconVillage, including source definitions (`sources.d/`), multi-format parsers (JSON, GeoJSON, XML, CSV), field mapping engine, HTTP fetcher with retry logic, and SQLite persistence scheduler.
+This step-by-step TDD implementation plan details the creation of the backend YAML Declarative Ingestion Engine for MK-OSINT, including source definitions (`sources.d/`), multi-format parsers (JSON, GeoJSON, XML, CSV), field mapping engine, HTTP fetcher with retry logic, and SQLite persistence scheduler.
 
 ---
 
@@ -344,7 +344,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
         const response = await fetch(url, {
           method,
           headers: {
-            'User-Agent': 'ReconVillage-OSINT/1.0',
+            'User-Agent': 'MK-OSINT/1.0',
             ...headers
           },
           signal: controller.signal
@@ -1055,9 +1055,9 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 - [ ] **Step 7.4: Live dedup sanity check**
   Start the engine against the real feeds for ~2 minutes, then:
   ```
-  sqlite3 recon.db "SELECT count(*) FROM observations;"
-  sqlite3 recon.db "SELECT count(*) FROM entities;"
-  sqlite3 recon.db "SELECT count(DISTINCT entity_id||timestamp) FROM observations;"
+  sqlite3 mk-osint.db "SELECT count(*) FROM observations;"
+  sqlite3 mk-osint.db "SELECT count(*) FROM entities;"
+  sqlite3 mk-osint.db "SELECT count(DISTINCT entity_id||timestamp) FROM observations;"
   ```
   Expected: `observations` ≈ `count(DISTINCT entity_id||timestamp)` (no duplicate rows for
   the same entity+instant), and the observations/entities ratio is bounded — NOT tens of

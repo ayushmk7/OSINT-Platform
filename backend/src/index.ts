@@ -12,7 +12,7 @@ dotenv.config();
 const PORT = process.env.PORT || 4000;
 const SOURCES_DIR = process.env.SOURCES_DIR || path.resolve(__dirname, '../../sources.d');
 
-const db = initDatabase(process.env.DB_PATH || 'recon.db');
+const db = initDatabase(process.env.DB_PATH || 'mk-osint.db');
 const app = createApp(db);
 
 // ONE http server: Express handles REST, the WebSocket server attaches to the same
@@ -27,7 +27,7 @@ const scheduler = new IngestionScheduler(db, SOURCES_DIR);
 scheduler.onEntityUpdate = (entity) => broadcaster.broadcastEntityUpdate(entity);
 
 server.listen(PORT, () => {
-  console.log(`ReconVillage Backend running on port ${PORT} (ws ${WS_PATH})`);
+  console.log(`MK-OSINT backend running on port ${PORT} (ws ${WS_PATH})`);
   if (process.env.INGEST_ENABLED === 'false') {
     console.log('Ingestion engine disabled (INGEST_ENABLED=false)');
     scheduler.initSources();

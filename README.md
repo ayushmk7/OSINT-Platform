@@ -1,4 +1,4 @@
-# Vibe Coding an OSINT Intelligence Platform
+# MK-OSINT
 
 A real-time 3D OSINT globe, plus the workshop kit for building one with an AI coding agent.
 
@@ -77,7 +77,7 @@ The backend reads environment variables (via `dotenv`). Copy `backend/.env.examp
 | :-- | :-- | :-- |
 | `PORT` | `4000` | HTTP and WebSocket port for the backend |
 | `SOURCES_DIR` | `<repo>/sources.d` | Directory the engine loads source YAML files from |
-| `DB_PATH` | `recon.db` | SQLite database file, relative to the backend working directory |
+| `DB_PATH` | `mk-osint.db` | SQLite database file, relative to the backend working directory |
 | `INGEST_ENABLED` | `true` | Set to `false` to register sources without polling them |
 
 If you change `PORT`, update the proxy targets in `frontend/vite.config.ts` to match.

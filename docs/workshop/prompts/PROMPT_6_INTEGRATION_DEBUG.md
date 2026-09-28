@@ -4,7 +4,7 @@ You are an expert Full-Stack Software Engineer and SRE specializing in end-to-en
 systematic debugging, and browser-based visual validation with the Chrome DevTools MCP.
 
 Your task is to generate a Superpowers Spec and Implementation Plan, then execute Step 6 of the
-ReconVillage OSINT Platform: a **final integration pass** that assumes steps 1–5 are "done" and
+MK-OSINT: a **final integration pass** that assumes steps 1–5 are "done" and
 **proves it end-to-end — or fixes whatever is broken.** This step exists because the previous run
 marked every task complete while the running app was broken; passing unit tests is not proof.
 
@@ -75,7 +75,7 @@ bug to fix, not a note to leave behind.
 
 ## Input Data
 =============================================
-Project Target: ReconVillage OSINT Platform — final integration & debug pass
+Project Target: MK-OSINT — final integration & debug pass
 Preconditions: Steps 1–5 implemented.
 Tools: make, curl, sqlite3, Chrome DevTools MCP (screenshots, console, network), systematic-debugging.
 Backend port: 4000. Frontend dev: 3000. WS path: /ws/telemetry. Vite proxies /api and /ws (ws:true).

@@ -1,7 +1,7 @@
 # Technical Specification: 04 - Frontend 3D Globe Dashboard & Real-Time Telemetry HUD
 
 ## 1. Overview
-This specification details the frontend architecture for the ReconVillage OSINT Platform. The frontend is built using Vite, React 18, TypeScript, Redux Toolkit (RTK) & RTK Query, Material UI (MUI) green-on-black tactical dark theme, WebSockets, and **CesiumJS** (bundled with `vite-plugin-cesium`) for 3D geospatial visualization. The frontend connects to the backend REST API (`/api/sources`, `/api/entities`, `/api/observations`) and streams real-time WebSocket telemetry updates from `/ws/telemetry`, visualizing global intelligence targets (satellites, aircraft, earthquakes, radiation, ships) as **tactical filled-silhouette billboards on a real dark map**.
+This specification details the frontend architecture for the MK-OSINT. The frontend is built using Vite, React 18, TypeScript, Redux Toolkit (RTK) & RTK Query, Material UI (MUI) green-on-black tactical dark theme, WebSockets, and **CesiumJS** (bundled with `vite-plugin-cesium`) for 3D geospatial visualization. The frontend connects to the backend REST API (`/api/sources`, `/api/entities`, `/api/observations`) and streams real-time WebSocket telemetry updates from `/ws/telemetry`, visualizing global intelligence targets (satellites, aircraft, earthquakes, radiation, ships) as **tactical filled-silhouette billboards on a real dark map**.
 
 > The globe MUST be a functioning CesiumJS viewer over a real slippy-map basemap — never a
 > placeholder component and never a single fixed sphere texture. Verify it renders visually
@@ -253,7 +253,7 @@ Cesium billboards, not to the MUI palette.
 
 ### 6.2 Top Telemetry Stats Banner (`frontend/src/components/TelemetryStatsBanner.tsx`)
 Top navigation banner displaying:
-- **Platform Title**: `RECONVILLAGE OSINT CORE v1.0`
+- **Platform Title**: `MK-OSINT OSINT CORE v1.0`
 - **Connection Status Badge**:
   - `CONNECTED` (Green Chip)
   - `RECONNECTING` (Amber Chip)

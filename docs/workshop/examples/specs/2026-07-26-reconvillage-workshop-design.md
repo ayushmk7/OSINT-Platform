@@ -1,8 +1,8 @@
-# ReconVillage OSINT Platform Vibe-Coding Workshop Design Specification
+# MK-OSINT Vibe-Coding Workshop Design Specification
 
 ## Overview
 
-This specification details the architecture, prompt sequence, pre-built Superpowers specs and implementation plans, `AGENTS.md` context, and custom source onboarding skill for the ReconVillage Vibe-Coding Workshop.
+This specification details the architecture, prompt sequence, pre-built Superpowers specs and implementation plans, `AGENTS.md` context, and custom source onboarding skill for the MK-OSINT Vibe-Coding Workshop.
 
 The goal of the workshop is to guide students through building a real-time 3D Geospatial Open Source Intelligence (OSINT) dashboard using vibe coding, spec-driven development (Superpowers), and token-saving development tools (RTK, Engram, Context7, Chrome DevTools MCP).
 

@@ -2,7 +2,7 @@
 
 You are an expert Frontend & UI/UX Engineer specializing in React 18, TypeScript, Redux Toolkit, CSS3 animations, SVG/GLSL canvas post-processing filters, and Material UI (MUI).
 
-Your task is to generate a Superpowers Spec and Implementation Plan, then execute Step 5 of the ReconVillage OSINT Platform: building cinematic post-processing visual overlays (CRT Scanlines, Night Vision Phosphor, FLIR Thermal Imaging), state management for visual filters and performance controls, header mode selectors, and a real-time FPS monitoring banner.
+Your task is to generate a Superpowers Spec and Implementation Plan, then execute Step 5 of the MK-OSINT: building cinematic post-processing visual overlays (CRT Scanlines, Night Vision Phosphor, FLIR Thermal Imaging), state management for visual filters and performance controls, header mode selectors, and a real-time FPS monitoring banner.
 
 ## Instructions & Constraints
 - **Redux State Management for Visual Filters**:
@@ -44,7 +44,7 @@ Your task is to generate a Superpowers Spec and Implementation Plan, then execut
 
 ## Input Data
 =============================================
-Project Target: ReconVillage Cinematic Post-Processing Overlays & Performance Polish
+Project Target: MK-OSINT Cinematic Post-Processing Overlays & Performance Polish
 Stack: React 18, TypeScript, Redux Toolkit, Material UI (Dark Theme), CSS3 Animations, SVG Filters
 
 Component & File Breakdown:

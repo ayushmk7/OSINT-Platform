@@ -1,6 +1,6 @@
 # Implementation Plan: 06 - Full-Stack Integration, Sanity Check & Debug
 
-This plan executes the final end-to-end verification of the ReconVillage OSINT Platform and fixes
+This plan executes the final end-to-end verification of the MK-OSINT and fixes
 any defect it surfaces. It uses the **systematic-debugging** skill for every fix and the **Chrome
 DevTools MCP** for all visual/runtime evidence. "Done" means observed working, not "tests pass."
 
@@ -36,11 +36,11 @@ DevTools MCP** for all visual/runtime evidence. "Done" means observed working, n
 
 - [ ] **Step 1.4: Deduplication sanity (after ~2 min of ingestion)**
   ```
-  sqlite3 recon.db "SELECT count(*) FROM observations;"
-  sqlite3 recon.db "SELECT count(DISTINCT entity_id||timestamp) FROM observations;"
-  sqlite3 recon.db "SELECT count(*) FROM entities;"
-  sqlite3 recon.db "SELECT DISTINCT category FROM entities;"
-  sqlite3 recon.db "SELECT count(*) FROM entities WHERE latitude=0 AND longitude=0;"
+  sqlite3 mk-osint.db "SELECT count(*) FROM observations;"
+  sqlite3 mk-osint.db "SELECT count(DISTINCT entity_id||timestamp) FROM observations;"
+  sqlite3 mk-osint.db "SELECT count(*) FROM entities;"
+  sqlite3 mk-osint.db "SELECT DISTINCT category FROM entities;"
+  sqlite3 mk-osint.db "SELECT count(*) FROM entities WHERE latitude=0 AND longitude=0;"
   ```
   Expect: observations ≈ distinct(entity_id||timestamp); bounded obs/entity ratio; categories ⊆
   `{satellite, aircraft, geological, radiation, maritime}`; zero `(0,0)` rows.

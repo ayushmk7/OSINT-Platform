@@ -2,7 +2,7 @@
 
 You are an expert Full-Stack Software Engineer specializing in Node.js, TypeScript, SQLite, YAML data ingestion, and background schedulers.
 
-Your task is to generate a Superpowers Spec and Implementation Plan, then execute Step 2 of the ReconVillage OSINT Platform: building the backend YAML Declarative Ingestion Engine to fetch, parse, map, and store telemetry data from multiple external OSINT APIs.
+Your task is to generate a Superpowers Spec and Implementation Plan, then execute Step 2 of the MK-OSINT: building the backend YAML Declarative Ingestion Engine to fetch, parse, map, and store telemetry data from multiple external OSINT APIs.
 
 ## Instructions & Constraints
 - **Engine Architecture**: Place all engine code inside `backend/src/engine/`.
@@ -56,7 +56,7 @@ Your task is to generate a Superpowers Spec and Implementation Plan, then execut
 
 ## Input Data
 =============================================
-Project Target: ReconVillage Backend Ingestion Engine
+Project Target: MK-OSINT backend Ingestion Engine
 Stack: Node.js, TypeScript, better-sqlite3, fast-xml-parser, papaparse, yaml, axios / native fetch
 
 Target Engine Modules:

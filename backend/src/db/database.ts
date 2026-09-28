@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 
 let dbSingleton: Database.Database | null = null;
 
-export function initDatabase(dbPath: string = 'recon.db'): Database.Database {
+export function initDatabase(dbPath: string = 'mk-osint.db'): Database.Database {
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
 

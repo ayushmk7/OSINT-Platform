@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-This specification details the architecture for the cinematic post-processing visual filter system and performance monitoring HUD in the ReconVillage OSINT Platform. Built using React 18, Redux Toolkit, Material UI (MUI), and CSS3/SVG post-processing shaders, Step 5 transforms the live 3D geospatial dashboard into an immersive, military-grade tactical workstation.
+This specification details the architecture for the cinematic post-processing visual filter system and performance monitoring HUD in the MK-OSINT. Built using React 18, Redux Toolkit, Material UI (MUI), and CSS3/SVG post-processing shaders, Step 5 transforms the live 3D geospatial dashboard into an immersive, military-grade tactical workstation.
 
 The system provides three distinct post-processing visualization modes:
 1. **Retro CRT Scanlines (`crt`)**: Simulates classic cathode-ray tube raster displays with curved screen vignettes, scanline frequency grids, and chromatic RGB color separation.
@@ -18,7 +18,7 @@ Additionally, Step 5 introduces a real-time Performance HUD containing a live FP
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          Material UI App Header                             │
-│  [ ReconVillage OSINT ] [ Telemetry Stats ] [ Filter Mode Selector Toggle ] │
+│  [ MK-OSINT ] [ Telemetry Stats ] [ Filter Mode Selector Toggle ] │
 └─────────────────────────────────────────────────────────────────────────────┘
                                        │
 ┌──────────────────────────────────────┴──────────────────────────────────────┐

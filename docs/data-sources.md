@@ -41,7 +41,7 @@ This page documents the schema as implemented in `backend/src/engine/yaml-loader
 | `type` | string | **yes** | | Stored in `sources.transport`. The engine only implements HTTP polling and does not branch on this value; use `http_poll`. |
 | `url` | string | **yes** | | Endpoint to fetch. |
 | `method` | string | no | `GET` | HTTP method. No request body is sent. |
-| `headers` | map of string | no | | Extra request headers. `User-Agent: ReconVillage-OSINT/1.0` is sent by default and can be overridden here. |
+| `headers` | map of string | no | | Extra request headers. `User-Agent: MK-OSINT/1.0` is sent by default and can be overridden here. |
 | `timeout` | duration | no | `10s` | Per-attempt timeout. |
 | `interval` | duration | no | `60s` | Poll period. The TypeScript type marks it required, but the loader does not check it and falls back to 60 seconds. |
 | `retry.max_attempts` | number | no | `3` | Total attempts per poll, including the first. |

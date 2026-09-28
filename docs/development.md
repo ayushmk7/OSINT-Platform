@@ -39,7 +39,7 @@ This runs both dev servers with `concurrently`:
 | Backend | `tsx watch src/index.ts` (in `backend/`) | 4000 (`PORT`) | REST at `/api/*`, WebSocket at `/ws/telemetry`. Restarts on file changes. |
 | Frontend | `vite` (in `frontend/`) | 3000 | Proxies `/api` and `/ws` to `http://localhost:4000`. |
 
-Open http://localhost:3000. The backend logs `ReconVillage Backend running on port 4000 (ws /ws/telemetry)` and then one line per source problem, if there are any.
+Open http://localhost:3000. The backend logs `MK-OSINT backend running on port 4000 (ws /ws/telemetry)` and then one line per source problem, if there are any.
 
 You can also run one side on its own:
 
@@ -67,7 +67,7 @@ All are optional and read by `backend/src/index.ts`. The template is [`backend/.
 | :-- | :-- | :-- |
 | `PORT` | `4000` | HTTP and WebSocket port. |
 | `SOURCES_DIR` | `<repo>/sources.d` | Directory of source YAML files. The default is computed from the backend's own location, so it works for both `src/` (dev) and `dist/` (build). |
-| `DB_PATH` | `recon.db` | SQLite file. A relative path resolves against the process working directory, which is `backend/` under the npm scripts, giving `backend/recon.db`. WAL mode also creates `-wal` and `-shm` files next to it. |
+| `DB_PATH` | `mk-osint.db` | SQLite file. A relative path resolves against the process working directory, which is `backend/` under the npm scripts, giving `backend/mk-osint.db`. WAL mode also creates `-wal` and `-shm` files next to it. |
 | `INGEST_ENABLED` | enabled | Set to `false` to register sources without polling them. The API and WebSocket still serve whatever is already in the database. Any other value, or leaving it unset, enables ingestion. |
 
 `dotenv` loads `.env` from the process working directory. With the npm scripts that is `backend/`, so put overrides in `backend/.env` (it is gitignored) or export them in your shell:
@@ -78,9 +78,9 @@ cp backend/.env.example backend/.env
 INGEST_ENABLED=false npm run dev --prefix backend
 ```
 
-To start from an empty database, stop the backend and delete `backend/recon.db*`. The schema is recreated on the next start.
+To start from an empty database, stop the backend and delete `backend/mk-osint.db*`. The schema is recreated on the next start.
 
-A local `backend/recon.db` created before entity ids were namespaced by source still holds unprefixed ids (for example `25544` instead of `iss_position:25544`) alongside the new prefixed rows. There is no migration: delete `backend/recon.db*` to reset.
+Older checkouts used `backend/recon.db`. It is no longer read (and holds pre-namespacing entity ids); delete it.
 
 ## Testing
 

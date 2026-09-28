@@ -514,7 +514,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexGrow: 1 }}>
         <Typography variant="h6" sx={{ color: '#00ff9d', fontWeight: 'bold', letterSpacing: 1 }}>
-          RECONVILLAGE OSINT CORE
+          MK-OSINT OSINT CORE
         </Typography>
         <Box sx={{ flexGrow: 1 }} />
         <Stack direction="row" spacing={2} alignItems="center">
@@ -802,7 +802,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
   ```typescript
   // Tactical filled-silhouette markers drawn directly with Canvas 2D — no icon library, no disc.
   // Each drawX() fills a solid silhouette in the category color, with a black inset cutout for an
-  // embossed "outlined" feel plus a center dot. Ported from the ReconVillage command-center icon
+  // embossed "outlined" feel plus a center dot. Ported from the MK-OSINT command-center icon
   // set. Rotatable shapes (flight, ship) point north (heading 0) so GlobeView can rotate them.
   type IconDrawFn = (ctx: CanvasRenderingContext2D, color: string) => void;
 

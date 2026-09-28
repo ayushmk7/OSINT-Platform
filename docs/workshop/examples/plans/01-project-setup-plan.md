@@ -45,7 +45,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   .PHONY: install dev build test lint format help
 
   help:
-  	@echo "ReconVillage Workshop Automation Commands:"
+  	@echo "MK-OSINT commands:"
   	@echo "  make install - Install all Node.js dependencies (root + workspaces)"
   	@echo "  make dev     - Launch backend and frontend dev servers"
   	@echo "  make build   - Compile backend and frontend web assets"
@@ -88,7 +88,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/package.json`
   ```json
   {
-    "name": "reconvillage-backend",
+    "name": "mk-osint-backend",
     "version": "1.0.0",
     "private": true,
     "main": "dist/index.js",
@@ -218,7 +218,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
 
   let dbSingleton: Database.Database | null = null;
 
-  export function initDatabase(dbPath: string = 'recon.db'): Database.Database {
+  export function initDatabase(dbPath: string = 'mk-osint.db'): Database.Database {
     const db = new Database(dbPath);
     db.pragma('journal_mode = WAL');
 
@@ -309,7 +309,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   ```yaml
   openapi: 3.0.3
   info:
-    title: ReconVillage OSINT Platform API
+    title: MK-OSINT API
     description: RESTful API for querying telemetry sources, entities, and observations.
     version: 1.0.0
   paths:
@@ -527,11 +527,11 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   dotenv.config();
 
   const PORT = process.env.PORT || 4000;
-  const db = initDatabase(process.env.DB_PATH || 'recon.db');
+  const db = initDatabase(process.env.DB_PATH || 'mk-osint.db');
   const app = createApp(db);
 
   app.listen(PORT, () => {
-    console.log(`ReconVillage Backend running on port ${PORT}`);
+    console.log(`MK-OSINT backend running on port ${PORT}`);
   });
   ```
 
@@ -548,7 +548,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/package.json`
   ```json
   {
-    "name": "reconvillage-frontend",
+    "name": "mk-osint-frontend",
     "private": true,
     "version": "1.0.0",
     "type": "module",
@@ -770,7 +770,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>ReconVillage OSINT Platform</title>
+      <title>MK-OSINT</title>
     </head>
     <body style="margin: 0; padding: 0; background-color: #000000; overflow: hidden;">
       <div id="root"></div>
@@ -817,7 +817,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
               component="div"
               sx={{ color: 'primary.main', flexGrow: 1, letterSpacing: '0.15em' }}
             >
-              RECONVILLAGE OSINT PLATFORM
+              MK-OSINT OSINT PLATFORM
             </Typography>
           </Toolbar>
         </AppBar>

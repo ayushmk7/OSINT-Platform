@@ -2,7 +2,7 @@
 
 You are an expert Full-Stack Software Engineer specializing in Node.js, TypeScript, Express, SQLite, and React.
 
-Your task is to generate a Superpowers Spec and Implementation Plan, then execute Step 1 of the ReconVillage OSINT Platform: initializing the monorepo project structure, root Makefile, backend TypeScript + Express + SQLite setup with OpenAPI 3.0 specification, and a frontend Vite + React + MUI foundation that culminates in a simple, interactive **CesiumJS globe** — so students immediately see the thing they will spend the rest of the workshop building. (Steps 2–3 are backend-only; step 4 layers live telemetry onto this same globe.)
+Your task is to generate a Superpowers Spec and Implementation Plan, then execute Step 1 of the MK-OSINT: initializing the monorepo project structure, root Makefile, backend TypeScript + Express + SQLite setup with OpenAPI 3.0 specification, and a frontend Vite + React + MUI foundation that culminates in a simple, interactive **CesiumJS globe** — so students immediately see the thing they will spend the rest of the workshop building. (Steps 2–3 are backend-only; step 4 layers live telemetry onto this same globe.)
 
 ## Instructions & Constraints
 - **Monorepo Layout**: Organize the workspace into a root project with `backend/` and `frontend/` packages using NPM workspaces or package scripts.
@@ -42,7 +42,7 @@ Your task is to generate a Superpowers Spec and Implementation Plan, then execut
 
 ## Input Data
 =============================================
-Project Target: ReconVillage OSINT Intelligence Platform
+Project Target: MK-OSINT Intelligence Platform
 Stack: Node.js, Express, TypeScript, better-sqlite3, ws, yaml, Vite, React, MUI (Dark Theme)
 
 Database Tables Required:

@@ -2,7 +2,7 @@
 
 You are an expert Full-Stack & Frontend Software Engineer specializing in React 18, TypeScript, Redux Toolkit, RTK Query, Material UI (MUI), WebSockets, and 3D geospatial visualization with **CesiumJS**.
 
-Your task is to generate a Superpowers Spec and Implementation Plan, then execute Step 4 of the ReconVillage OSINT Platform: **extending the simple CesiumJS globe built in step 1** into a full React + Redux Toolkit + MUI + **CesiumJS** 3D Globe dashboard — adding state management, RTK Query endpoints, a real-time WebSocket hook, **tactical filled-silhouette markers on the existing globe**, layer controls, an entity inspector drawer, and a telemetry stats banner. You are building on the frontend students already have, not starting the globe from scratch.
+Your task is to generate a Superpowers Spec and Implementation Plan, then execute Step 4 of the MK-OSINT: **extending the simple CesiumJS globe built in step 1** into a full React + Redux Toolkit + MUI + **CesiumJS** 3D Globe dashboard — adding state management, RTK Query endpoints, a real-time WebSocket hook, **tactical filled-silhouette markers on the existing globe**, layer controls, an entity inspector drawer, and a telemetry stats banner. You are building on the frontend students already have, not starting the globe from scratch.
 
 > **This is the step that failed hardest before.** The previous run shipped a `GlobeView`
 > that was a placeholder `<Box>` rendering the text "3D GLOBE ENGINE READY" — no globe engine,
@@ -63,7 +63,7 @@ Your task is to generate a Superpowers Spec and Implementation Plan, then execut
 
 ## Input Data
 =============================================
-Project Target: ReconVillage Frontend 3D Globe & OSINT Dashboard
+Project Target: MK-OSINT Frontend 3D Globe & OSINT Dashboard
 Stack: Vite, React 18, TypeScript, Redux Toolkit, RTK Query, Material UI (green-on-black tactical dark theme), CesiumJS (+ vite-plugin-cesium), WebSockets. Markers are drawn with Canvas 2D (no icon library).
 
 Component & File Breakdown:

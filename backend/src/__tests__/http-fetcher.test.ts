@@ -39,7 +39,7 @@ describe('HTTP Fetcher', () => {
     try {
       const body = await fetchUrl({ url: server.url, timeoutMs: 2000 });
       expect(JSON.parse(body)).toEqual({ ok: true });
-      expect(seenUserAgent).toContain('ReconVillage');
+      expect(seenUserAgent).toContain('MK-OSINT');
     } finally {
       await server.close();
     }
