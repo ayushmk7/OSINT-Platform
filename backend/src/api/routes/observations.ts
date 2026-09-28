@@ -18,9 +18,9 @@ router.get('/', (req: Request, res: Response) => {
     const limit = intParam(req.query.limit, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
     const offset = intParam(req.query.offset, 0, 0, Number.MAX_SAFE_INTEGER);
 
-    const observations = getObservations({ entity_id, source_id, limit, offset });
+    const { rows: observations, total } = getObservations({ entity_id, source_id, limit, offset });
 
-    res.json({ total: observations.length, limit, offset, observations });
+    res.json({ total, limit, offset, observations });
   } catch (err) {
     sendServerError(res, 'Failed to fetch observations', err);
   }

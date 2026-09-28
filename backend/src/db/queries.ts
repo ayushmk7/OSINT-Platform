@@ -32,75 +32,144 @@ function clampOffset(offset?: number): number {
   return offset;
 }
 
-export function getAllSources(): unknown[] {
-  const db = getDatabase();
-  return db.prepare('SELECT * FROM sources ORDER BY id ASC').all();
+/**
+ * Wire-format normalisation. SQLite stores `metadata` / `raw_payload` as JSON TEXT and
+ * `enabled` as INTEGER 0/1; every REST response and WS frame exposes them as a parsed object
+ * and a boolean instead, so clients never have to JSON.parse a field.
+ */
+export function parseJsonObject(value: unknown): Record<string, unknown> {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {}; // a malformed blob must never fail the whole response
+  }
 }
 
-/**
- * Entity query with category / source / spatial bounding-box filters.
- * Every filter is bound as a prepared-statement parameter — never string-interpolated.
- */
-export function getEntities(options: EntityFilterOptions = {}): unknown[] {
-  const db = getDatabase();
-  const limit = clampLimit(options.limit);
-  const offset = clampOffset(options.offset);
+type Row = Record<string, unknown>;
 
-  let query = 'SELECT * FROM entities WHERE 1=1';
+export function serializeSource(row: Row): Row {
+  return { ...row, enabled: Boolean(row.enabled) };
+}
+
+export function serializeEntity(row: Row): Row {
+  return { ...row, metadata: parseJsonObject(row.metadata) };
+}
+
+export function serializeObservation(row: Row): Row {
+  return { ...row, raw_payload: parseJsonObject(row.raw_payload) };
+}
+
+export interface Page {
+  rows: Row[];
+  /** Rows matching the filters, independent of limit/offset. */
+  total: number;
+}
+
+export function getAllSources(): Row[] {
+  const db = getDatabase();
+  return (db.prepare('SELECT * FROM sources ORDER BY id ASC').all() as Row[]).map(serializeSource);
+}
+
+function entityWhere(options: EntityFilterOptions): { where: string; params: (string | number)[] } {
+  let where = 'WHERE 1=1';
   const params: (string | number)[] = [];
 
   if (options.category) {
-    query += ' AND category = ?';
+    where += ' AND category = ?';
     params.push(options.category);
   }
   if (options.source_id) {
-    query += ' AND source_id = ?';
+    where += ' AND source_id = ?';
     params.push(options.source_id);
   }
   if (options.min_lat !== undefined) {
-    query += ' AND latitude >= ?';
+    where += ' AND latitude >= ?';
     params.push(options.min_lat);
   }
   if (options.max_lat !== undefined) {
-    query += ' AND latitude <= ?';
+    where += ' AND latitude <= ?';
     params.push(options.max_lat);
   }
   if (options.min_lon !== undefined) {
-    query += ' AND longitude >= ?';
+    where += ' AND longitude >= ?';
     params.push(options.min_lon);
   }
   if (options.max_lon !== undefined) {
-    query += ' AND longitude <= ?';
+    where += ' AND longitude <= ?';
     params.push(options.max_lon);
   }
-
-  query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
-  params.push(limit, offset);
-
-  return db.prepare(query).all(params);
+  return { where, params };
 }
 
-export function getObservations(options: ObservationFilterOptions = {}): unknown[] {
-  const db = getDatabase();
-  const limit = clampLimit(options.limit);
-  const offset = clampOffset(options.offset);
-
-  let query = 'SELECT * FROM observations WHERE 1=1';
+function observationWhere(options: ObservationFilterOptions): {
+  where: string;
+  params: (string | number)[];
+} {
+  let where = 'WHERE 1=1';
   const params: (string | number)[] = [];
 
   if (options.entity_id) {
-    query += ' AND entity_id = ?';
+    where += ' AND entity_id = ?';
     params.push(options.entity_id);
   }
   if (options.source_id) {
-    query += ' AND source_id = ?';
+    where += ' AND source_id = ?';
     params.push(options.source_id);
   }
+  return { where, params };
+}
 
-  query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
-  params.push(limit, offset);
+/**
+ * One page of rows plus the COUNT(*) over the same WHERE clause. Every filter is bound as a
+ * prepared-statement parameter — never string-interpolated (`table` / `where` are internal).
+ */
+function paginate(
+  table: 'entities' | 'observations',
+  where: string,
+  params: (string | number)[],
+  limit: number,
+  offset: number
+): { rows: Row[]; total: number } {
+  const db = getDatabase();
+  const rows = db
+    .prepare(`SELECT * FROM ${table} ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`)
+    .all([...params, limit, offset]) as Row[];
+  const { total } = db.prepare(`SELECT COUNT(*) AS total FROM ${table} ${where}`).get(params) as {
+    total: number;
+  };
+  return { rows, total };
+}
 
-  return db.prepare(query).all(params);
+/** Entity query with category / source / spatial bounding-box filters. */
+export function getEntities(options: EntityFilterOptions = {}): Page {
+  const { where, params } = entityWhere(options);
+  const page = paginate(
+    'entities',
+    where,
+    params,
+    clampLimit(options.limit),
+    clampOffset(options.offset)
+  );
+  return { rows: page.rows.map(serializeEntity), total: page.total };
+}
+
+export function getObservations(options: ObservationFilterOptions = {}): Page {
+  const { where, params } = observationWhere(options);
+  const page = paginate(
+    'observations',
+    where,
+    params,
+    clampLimit(options.limit),
+    clampOffset(options.offset)
+  );
+  return { rows: page.rows.map(serializeObservation), total: page.total };
 }
 
 /**
@@ -111,16 +180,18 @@ export function getObservations(options: ObservationFilterOptions = {}): unknown
  * paints nothing but planes on first load. Taking the newest `perCategory` rows *per
  * category* guarantees every category present in the DB appears in the snapshot.
  */
-export function getInitialSnapshot(perCategory = 300): unknown[] {
+export function getInitialSnapshot(perCategory = 300): Row[] {
   const db = getDatabase();
-  return db
-    .prepare(
-      `SELECT id, source_id, category, name, latitude, longitude, altitude, timestamp, metadata
+  return (
+    db
+      .prepare(
+        `SELECT id, source_id, category, name, latitude, longitude, altitude, timestamp, metadata
        FROM (
          SELECT *, ROW_NUMBER() OVER (PARTITION BY category ORDER BY timestamp DESC) AS rn
          FROM entities
        )
        WHERE rn <= ?`
-    )
-    .all(perCategory);
+      )
+      .all(perCategory) as Row[]
+  ).map(serializeEntity);
 }

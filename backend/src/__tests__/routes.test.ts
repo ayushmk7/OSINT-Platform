@@ -1,4 +1,5 @@
 import request from 'supertest';
+import { parse as parseYaml } from 'yaml';
 import { createApp } from '../app';
 import { initDatabase, closeDatabase } from '../db/database';
 import Database from 'better-sqlite3';
@@ -146,6 +147,167 @@ describe('REST API Routes', () => {
   });
 });
 
+describe('REST API — pagination totals', () => {
+  let db: Database.Database;
+  let app: ReturnType<typeof createApp>;
+
+  beforeAll(() => {
+    db = initDatabase(':memory:');
+    db.prepare(
+      `INSERT INTO sources (id, name, type, transport, url, update_interval_sec, enabled)
+       VALUES ('src-1', 'Test Source', 'test', 'http_poll', 'http://example.com', 60, 1),
+              ('src-2', 'Other Source', 'test', 'http_poll', 'http://example.com', 60, 0)`
+    ).run();
+    const insertEntity = db.prepare(
+      `INSERT INTO entities (id, source_id, category, name, latitude, longitude, altitude, timestamp, metadata)
+       VALUES (?, ?, ?, ?, 10, 10, 0, ?, '{"k":1}')`
+    );
+    const insertObs = db.prepare(
+      `INSERT INTO observations
+         (id, entity_id, source_id, latitude, longitude, altitude, speed, heading, timestamp, raw_payload)
+       VALUES (?, ?, ?, 10, 10, 0, 0, 0, ?, '{"raw":true}')`
+    );
+    for (let i = 0; i < 5; i++) {
+      const ts = `2026-07-2${i}T00:00:00Z`;
+      insertEntity.run(`sat_${i}`, 'src-1', 'satellite', `SAT${i}`, ts);
+      insertObs.run(`obs_sat_${i}`, `sat_${i}`, 'src-1', ts);
+    }
+    for (let i = 0; i < 3; i++) {
+      const ts = `2026-07-1${i}T00:00:00Z`;
+      insertEntity.run(`ac_${i}`, 'src-2', 'aircraft', `AC${i}`, ts);
+      insertObs.run(`obs_ac_${i}`, `ac_${i}`, 'src-2', ts);
+    }
+    app = createApp(db);
+  });
+
+  afterAll(() => {
+    closeDatabase(db);
+  });
+
+  it('entities total counts every matching row, independent of limit/offset', async () => {
+    const res = await request(app).get('/api/entities?limit=2&offset=1');
+    expect(res.body.entities.length).toBe(2);
+    expect(res.body.total).toBe(8);
+  });
+
+  it('entities total honours the filters', async () => {
+    const res = await request(app).get('/api/entities?category=satellite&limit=1');
+    expect(res.body.entities.length).toBe(1);
+    expect(res.body.total).toBe(5);
+
+    const bySource = await request(app).get('/api/entities?source_id=src-2&offset=10');
+    expect(bySource.body.entities.length).toBe(0);
+    expect(bySource.body.total).toBe(3);
+  });
+
+  it('observations total counts every matching row, independent of limit/offset', async () => {
+    const all = await request(app).get('/api/observations?limit=3&offset=2');
+    expect(all.body.observations.length).toBe(3);
+    expect(all.body.total).toBe(8);
+
+    const filtered = await request(app).get('/api/observations?source_id=src-1&limit=1');
+    expect(filtered.body.observations.length).toBe(1);
+    expect(filtered.body.total).toBe(5);
+  });
+
+  it('returns metadata / raw_payload as objects and enabled as a boolean', async () => {
+    const sources = await request(app).get('/api/sources');
+    const enabled = Object.fromEntries(
+      sources.body.sources.map((s: { id: string; enabled: unknown }) => [s.id, s.enabled])
+    );
+    expect(enabled).toEqual({ 'src-1': true, 'src-2': false });
+
+    const entities = await request(app).get('/api/entities?limit=1');
+    expect(entities.body.entities[0].metadata).toEqual({ k: 1 });
+
+    const obs = await request(app).get('/api/observations?limit=1');
+    expect(obs.body.observations[0].raw_payload).toEqual({ raw: true });
+  });
+
+  it('degrades malformed stored JSON to an empty object instead of failing', async () => {
+    db.prepare(`UPDATE entities SET metadata = 'not json' WHERE id = 'sat_4'`).run();
+    const res = await request(app).get('/api/entities?limit=1');
+    expect(res.status).toBe(200);
+    expect(res.body.entities[0].id).toBe('sat_4');
+    expect(res.body.entities[0].metadata).toEqual({});
+  });
+});
+
+describe('REST API — 404 and OpenAPI spec', () => {
+  let db: Database.Database;
+  let app: ReturnType<typeof createApp>;
+
+  beforeAll(() => {
+    db = initDatabase(':memory:');
+    app = createApp(db);
+  });
+
+  afterAll(() => {
+    closeDatabase(db);
+  });
+
+  it.each(['/api/nope', '/api/entities/does-not-exist', '/nope'])(
+    'unknown route %s returns the JSON error envelope',
+    async (path) => {
+      const res = await request(app).get(path);
+      expect(res.status).toBe(404);
+      expect(res.headers['content-type']).toMatch(/application\/json/);
+      expect(res.body).toEqual({
+        status: 404,
+        error: 'Not Found',
+        message: `Route not found: GET ${path}`,
+        details: null
+      });
+    }
+  );
+
+  it('GET /api/openapi.yaml serves the spec, documenting every route', async () => {
+    const res = await request(app).get('/api/openapi.yaml');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/yaml/);
+    const spec = parseYaml(res.text);
+    expect(spec.openapi).toMatch(/^3\./);
+    for (const p of [
+      '/api/health',
+      '/api/openapi.yaml',
+      '/api/sources',
+      '/api/entities',
+      '/api/observations'
+    ]) {
+      expect(spec.paths[p]).toBeDefined();
+    }
+    const paramNames = (p: string): string[] =>
+      spec.paths[p].get.parameters.map(
+        (x: { name?: string; $ref?: string }) =>
+          x.name ?? spec.components.parameters[String(x.$ref).split('/').pop() as string].name
+      );
+    expect(paramNames('/api/entities').sort()).toEqual(
+      [
+        'category',
+        'limit',
+        'max_lat',
+        'max_lon',
+        'min_lat',
+        'min_lon',
+        'offset',
+        'source_id'
+      ].sort()
+    );
+    expect(paramNames('/api/observations').sort()).toEqual(
+      ['entity_id', 'limit', 'offset', 'source_id'].sort()
+    );
+    expect(spec.components.schemas.Source.properties.enabled.type).toBe('boolean');
+    expect(spec.components.schemas.Entity.properties.metadata.type).toBe('object');
+    expect(spec.components.schemas.Observation.properties.raw_payload.type).toBe('object');
+    expect(spec.components.schemas.ErrorResponse.required).toEqual([
+      'status',
+      'error',
+      'message',
+      'details'
+    ]);
+  });
+});
+
 describe('REST API — atc_zone entities', () => {
   let db: Database.Database;
   let app: ReturnType<typeof createApp>;
@@ -214,7 +376,10 @@ describe('REST API — atc_zone entities', () => {
   it('carries radius_km, zone_note and a LiveATC search link in metadata', async () => {
     const res = await request(app).get('/api/entities?category=atc_zone');
     const byId = Object.fromEntries(
-      res.body.entities.map((e: { id: string; metadata: string }) => [e.id, JSON.parse(e.metadata)])
+      res.body.entities.map((e: { id: string; metadata: Record<string, unknown> }) => [
+        e.id,
+        e.metadata
+      ])
     );
 
     expect(byId.EGLL.radius_km).toBe(9);

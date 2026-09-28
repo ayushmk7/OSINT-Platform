@@ -58,7 +58,7 @@ router.get('/', (req: Request, res: Response) => {
         ? 0
         : Math.max(Math.trunc(requestedOffset), 0);
 
-    const entities = getEntities({
+    const { rows: entities, total } = getEntities({
       category,
       source_id,
       min_lat,
@@ -69,7 +69,7 @@ router.get('/', (req: Request, res: Response) => {
       offset
     });
 
-    return res.json({ total: entities.length, limit, offset, entities });
+    return res.json({ total, limit, offset, entities });
   } catch (err) {
     return sendServerError(res, 'Failed to fetch entities', err);
   }

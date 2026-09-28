@@ -72,7 +72,7 @@ describe('useWebSocket hook', () => {
           type: 'initial_state',
           timestamp: '2026-07-26T00:00:00Z',
           data: {
-            sources: [{ id: 's1', name: 'Source 1', enabled: 1 }],
+            sources: [{ id: 's1', name: 'Source 1', enabled: true }],
             entities: [
               {
                 id: 'e1',

@@ -13,7 +13,8 @@ export interface ObservationRecord {
   speed: number;
   heading: number;
   timestamp: string;
-  raw_payload?: string;
+  /** Parsed upstream record — an object on the wire, never a JSON string. */
+  raw_payload?: Record<string, unknown>;
 }
 
 export interface SourcesResponse {

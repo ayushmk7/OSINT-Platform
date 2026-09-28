@@ -54,7 +54,7 @@ describe('Tactical HUD Components', () => {
           transport: 'http_poll',
           url: 'http://example.test',
           update_interval_sec: 60,
-          enabled: 1
+          enabled: true
         }
       ])
     );
@@ -83,7 +83,7 @@ describe('Tactical HUD Components', () => {
         longitude: -73.7789,
         altitude: 0,
         timestamp: new Date().toISOString(),
-        metadata: '{"radius_km":9}'
+        metadata: { radius_km: 9 }
       })
     );
 
@@ -149,7 +149,7 @@ describe('EntityDetailsDrawer', () => {
         longitude: 56.78,
         altitude: 400000,
         timestamp: new Date().toISOString(),
-        metadata: '{"visibility":"daylight"}'
+        metadata: { visibility: 'daylight' }
       })
     );
     store.dispatch(setSelectedEntityId('test_sat'));
@@ -186,7 +186,7 @@ describe('EntityDetailsDrawer', () => {
         longitude: -0.461941,
         altitude: 0,
         timestamp: new Date().toISOString(),
-        metadata: JSON.stringify({
+        metadata: {
           icao: 'EGLL',
           iata_code: 'LHR',
           municipality: 'London',
@@ -194,7 +194,7 @@ describe('EntityDetailsDrawer', () => {
           radius_km: 9,
           zone_note: 'approximate control-zone radius, illustrative only',
           liveatc_url: 'https://www.liveatc.net/search/?icao=egll'
-        })
+        }
       })
     );
     store.dispatch(setSelectedEntityId('EGLL'));

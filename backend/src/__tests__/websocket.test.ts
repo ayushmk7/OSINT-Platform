@@ -1,10 +1,10 @@
 import http from 'http';
-import express from 'express';
 import WebSocket, { WebSocketServer } from 'ws';
 import Database from 'better-sqlite3';
 import { setupWebSocketServer, WS_PATH } from '../websocket/server';
 import { broadcaster } from '../websocket/broadcaster';
 import { initDatabase, closeDatabase } from '../db/database';
+import { createApp } from '../app';
 
 import { ENTITY_CATEGORIES } from '../engine/yaml-loader';
 
@@ -66,7 +66,7 @@ beforeAll(async () => {
   // snapshot is category-balanced (aircraft must not crowd the other four out).
   const insert = db.prepare(
     `INSERT INTO entities (id, source_id, category, name, latitude, longitude, altitude, timestamp, metadata)
-     VALUES (?, 's', ?, ?, ?, ?, 0, ?, '{}')`
+     VALUES (?, 's', ?, ?, ?, ?, 0, ?, '{"seeded":true}')`
   );
   ALL_CATEGORIES.filter((c) => c !== 'aircraft').forEach((c, i) =>
     insert.run(`${c}_1`, c, c, i, i, '2026-07-26T00:00:00Z')
@@ -75,7 +75,9 @@ beforeAll(async () => {
     insert.run(`aircraft_${i}`, 'aircraft', `AC${i}`, i % 80, i % 170, '2026-07-27T00:00:00Z');
   }
 
-  const app = express();
+  // The REAL app (JSON 404 catch-all included) — proves the catch-all does not swallow the
+  // WebSocket upgrade on WS_PATH.
+  const app = createApp(db);
   server = http.createServer(app);
   wss = setupWebSocketServer(server);
 
@@ -122,6 +124,29 @@ describe('WebSocket Telemetry Server', () => {
     expect(msg.data.entities.length).toBeGreaterThan(0);
     expect(msg.data.entities[0]).toHaveProperty('latitude');
     expect(msg.data.entities[0]).toHaveProperty('longitude');
+  });
+
+  it('initial_state carries metadata as an object and enabled as a boolean', async () => {
+    const ws = await connect();
+    const msg = await nextMessage(ws, 'initial_state');
+    expect(msg.data.sources[0].enabled).toBe(true);
+    for (const entity of msg.data.entities) {
+      expect(entity.metadata).toEqual({ seeded: true });
+    }
+  });
+
+  it('entity_update always carries metadata as an object', async () => {
+    const ws = await connect();
+    await nextMessage(ws, 'initial_state');
+
+    const updatePromise = nextMessage(ws, 'entity_update');
+    broadcaster.broadcastEntityUpdate({ id: 'str_meta', metadata: '{"a":1}' });
+    const msg = await updatePromise;
+    expect(msg.data.metadata).toEqual({ a: 1 });
+
+    const objPromise = nextMessage(ws, 'entity_update');
+    broadcaster.broadcastEntityUpdate({ id: 'obj_meta', metadata: { b: 2 } });
+    expect((await objPromise).data.metadata).toEqual({ b: 2 });
   });
 
   it('initial_state snapshot is category-balanced (every category present)', async () => {
@@ -219,7 +244,7 @@ describe('WebSocket heartbeat', () => {
   let hbPort: number;
 
   beforeAll(async () => {
-    hbServer = http.createServer(express());
+    hbServer = http.createServer(createApp(db));
     hbWss = setupWebSocketServer(hbServer, { heartbeatIntervalMs: 80 });
     await new Promise<void>((resolve) => {
       hbServer.listen(0, '127.0.0.1', () => {

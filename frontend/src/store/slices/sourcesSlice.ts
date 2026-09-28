@@ -8,7 +8,7 @@ export interface SourceRecord {
   transport: string;
   url: string;
   update_interval_sec: number;
-  enabled: number | boolean;
+  enabled: boolean;
 }
 
 export interface SourcesState {

@@ -5,6 +5,7 @@ import entitiesReducer, {
   setSelectedEntityId,
   setActiveCategoryFilter,
   MAX_TRAIL_POINTS,
+  parseEntityMetadata,
   type EntityRecord
 } from '../entitiesSlice';
 import sourcesReducer, { setSources, toggleSourceEnabled } from '../sourcesSlice';
@@ -19,6 +20,20 @@ const iss = (overrides: Partial<EntityRecord> = {}): EntityRecord => ({
   altitude: 400,
   timestamp: '2026-07-26T00:00:00Z',
   ...overrides
+});
+
+describe('parseEntityMetadata', () => {
+  it('passes through the object the backend sends on every REST/WS payload', () => {
+    const meta = { radius_km: 9 };
+    expect(parseEntityMetadata(meta)).toBe(meta);
+  });
+
+  it('returns an empty record for absent or non-object metadata', () => {
+    expect(parseEntityMetadata(undefined)).toEqual({});
+    expect(parseEntityMetadata(null)).toEqual({});
+    expect(parseEntityMetadata([1, 2])).toEqual({});
+    expect(parseEntityMetadata('{"legacy":"string"}')).toEqual({});
+  });
 });
 
 describe('Redux Slices', () => {
@@ -74,7 +89,7 @@ describe('Redux Slices', () => {
             transport: 'http_poll',
             url: 'http://example.test',
             update_interval_sec: 60,
-            enabled: 1
+            enabled: true
           }
         ])
       );
@@ -99,7 +114,7 @@ describe('Redux Slices', () => {
             transport: 'http_poll',
             url: 'http://example.test',
             update_interval_sec: 60,
-            enabled: 0
+            enabled: false
           }
         ])
       );

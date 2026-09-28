@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { parseJsonObject } from '../db/queries';
 
 /**
  * Decouples ingestion from WebSocket streaming: the scheduler hands entities to the
@@ -24,26 +25,15 @@ export class TelemetryBroadcaster {
     return this.clients.size;
   }
 
-  public broadcastEntityUpdate(entity: unknown): void {
+  /** `metadata` is always sent as an object — the same wire format as REST and `initial_state`. */
+  public broadcastEntityUpdate(entity: object): void {
+    const data: Record<string, unknown> = { ...entity };
+    if ('metadata' in data) data.metadata = parseJsonObject(data.metadata);
     this.sendToAll(
       JSON.stringify({
         type: 'entity_update',
         timestamp: new Date().toISOString(),
-        data: entity
-      })
-    );
-  }
-
-  /**
-   * Available for explicitly requested single observations. NOT called per record on
-   * every ingestion poll — see the broadcast discipline note above.
-   */
-  public broadcastObservation(observation: unknown): void {
-    this.sendToAll(
-      JSON.stringify({
-        type: 'observation',
-        timestamp: new Date().toISOString(),
-        data: observation
+        data
       })
     );
   }

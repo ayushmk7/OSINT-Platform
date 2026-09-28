@@ -25,26 +25,20 @@ export interface EntityRecord {
   longitude: number;
   altitude: number;
   timestamp: string;
-  metadata?: string | Record<string, unknown>;
+  /** Always a parsed object on the wire (REST, `initial_state`, `entity_update`). */
+  metadata?: Record<string, unknown>;
   trail?: TrailPoint[];
 }
 
 /**
- * `metadata` arrives as a JSON string from SQLite (or, in tests/WS frames, as an object).
- * Parse it defensively and always hand back a record: a malformed blob must never break a
- * render — callers just see no fields.
+ * The backend always sends `metadata` as a parsed object (REST and every WS frame), so there is
+ * nothing to JSON.parse. Still guard the shape and always hand back a record: an unexpected
+ * value must never break a render — callers just see no fields.
  */
-export function parseEntityMetadata(
-  metadata: string | Record<string, unknown> | undefined
-): Record<string, unknown> {
-  if (metadata === undefined || metadata === null) return {};
-  if (typeof metadata !== 'string') return metadata;
-  try {
-    const parsed: unknown = JSON.parse(metadata);
-    return parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
+export function parseEntityMetadata(metadata: unknown): Record<string, unknown> {
+  return metadata !== null && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? (metadata as Record<string, unknown>)
+    : {};
 }
 
 export interface EntitiesState {

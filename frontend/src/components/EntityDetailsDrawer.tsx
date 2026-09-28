@@ -27,15 +27,9 @@ function fieldText(value: unknown): string {
   return value === undefined || value === null || value === '' ? '—' : String(value);
 }
 
-/** `metadata` arrives as a JSON string from SQLite; render it, but never crash on bad JSON. */
-function formatMetadata(metadata: string | Record<string, unknown> | undefined): string {
-  if (metadata === undefined) return '';
-  if (typeof metadata !== 'string') return JSON.stringify(metadata, null, 2);
-  try {
-    return JSON.stringify(JSON.parse(metadata), null, 2);
-  } catch {
-    return metadata; // not JSON — show the raw string rather than hiding it
-  }
+/** `metadata` arrives as a parsed object on every REST/WS payload; pretty-print it. */
+function formatMetadata(metadata: Record<string, unknown> | undefined): string {
+  return metadata === undefined ? '' : JSON.stringify(metadata, null, 2);
 }
 
 export const EntityDetailsDrawer: FC = () => {

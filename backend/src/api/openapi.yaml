@@ -1,12 +1,46 @@
 openapi: 3.0.3
 info:
   title: ReconVillage OSINT Platform API
-  description: RESTful API for querying telemetry sources, entities, and observations.
+  description: >-
+    RESTful API for querying telemetry sources, entities, and observations.
+    Every response is a wrapped JSON object (never a bare array). `metadata` and
+    `raw_payload` are always parsed JSON objects and `enabled` is always a boolean —
+    the same wire format as the `/ws/telemetry` WebSocket frames. Every error, including
+    an unknown route (JSON 404, see `components.responses.NotFound`), uses the
+    `ErrorResponse` envelope.
   version: 1.0.0
 paths:
+  /api/health:
+    get:
+      summary: Liveness check
+      responses:
+        '200':
+          description: Server is up. `degraded` means the database handle is closed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, degraded]
+                required: [status]
+  /api/openapi.yaml:
+    get:
+      summary: This OpenAPI specification
+      responses:
+        '200':
+          description: The spec, read from disk at request time
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '500':
+          $ref: '#/components/responses/ServerError'
   /api/sources:
     get:
       summary: List data sources
+      description: All configured sources, ordered by `id` ascending. Not paginated.
       responses:
         '200':
           description: List of configured telemetry data sources
@@ -20,64 +54,175 @@ paths:
                     items:
                       $ref: '#/components/schemas/Source'
                 required: [sources]
+        '500':
+          $ref: '#/components/responses/ServerError'
   /api/entities:
     get:
       summary: List tracked entities
+      description: >-
+        Entities ordered by `timestamp` descending. All filters combine with AND.
+        Bounding-box bounds are inclusive and each may be given on its own.
       parameters:
         - in: query
           name: category
           schema:
             type: string
-          description: Filter by category (e.g. aircraft, satellite, vessel)
+          description: >-
+            Filter by category (satellite, aircraft, geological, radiation, maritime,
+            atc_zone)
+        - $ref: '#/components/parameters/SourceId'
+        - in: query
+          name: min_lat
+          schema:
+            type: number
+          description: Minimum latitude (inclusive). Must be numeric and <= `max_lat`.
+        - in: query
+          name: max_lat
+          schema:
+            type: number
+          description: Maximum latitude (inclusive). Must be numeric and >= `min_lat`.
+        - in: query
+          name: min_lon
+          schema:
+            type: number
+          description: Minimum longitude (inclusive). Must be numeric and <= `max_lon`.
+        - in: query
+          name: max_lon
+          schema:
+            type: number
+          description: Maximum longitude (inclusive). Must be numeric and >= `min_lon`.
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
       responses:
         '200':
-          description: List of tracked entities
+          description: One page of tracked entities
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   total:
-                    type: integer
+                    $ref: '#/components/schemas/Total'
                   limit:
                     type: integer
+                    description: The effective (clamped) limit
                   offset:
                     type: integer
+                    description: The effective (clamped) offset
                   entities:
                     type: array
                     items:
                       $ref: '#/components/schemas/Entity'
                 required: [total, limit, offset, entities]
+        '400':
+          description: >-
+            A bounding-box parameter is non-numeric
+            (`Invalid bounding box parameter: <name>`) or inverted
+            (`Invalid bounding box parameters: min_lat must be less than max_lat`, and the
+            same for lon)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 400
+                error: Bad Request
+                message: 'Invalid bounding box parameters: min_lat must be less than max_lat'
+                details: null
+        '500':
+          $ref: '#/components/responses/ServerError'
   /api/observations:
     get:
       summary: List recorded observations
+      description: Observations ordered by `timestamp` descending. Filters combine with AND.
       parameters:
         - in: query
           name: entity_id
           schema:
             type: string
           description: Filter by entity ID
+        - $ref: '#/components/parameters/SourceId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
       responses:
         '200':
-          description: List of observations
+          description: One page of observations
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   total:
-                    type: integer
+                    $ref: '#/components/schemas/Total'
                   limit:
                     type: integer
+                    description: The effective (clamped) limit
                   offset:
                     type: integer
+                    description: The effective (clamped) offset
                   observations:
                     type: array
                     items:
                       $ref: '#/components/schemas/Observation'
                 required: [total, limit, offset, observations]
+        '500':
+          $ref: '#/components/responses/ServerError'
 components:
+  parameters:
+    SourceId:
+      in: query
+      name: source_id
+      schema:
+        type: string
+      description: Filter by source ID
+    Limit:
+      in: query
+      name: limit
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+      description: >-
+        Page size. Truncated to an integer and clamped to [1, 1000]; a missing or
+        non-numeric value falls back to 100. Never rejected.
+    Offset:
+      in: query
+      name: offset
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: >-
+        Rows to skip. Truncated to an integer and clamped to >= 0; a missing or
+        non-numeric value falls back to 0. Never rejected.
+  responses:
+    ServerError:
+      description: Unexpected server error. The message is a fixed, safe string.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: >-
+        Returned for any unknown route (any method, any path, e.g. `/api/nope` or
+        `/api/entities/abc`). The WebSocket endpoint `/ws/telemetry` is unaffected.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            status: 404
+            error: Not Found
+            message: 'Route not found: GET /api/nope'
+            details: null
   schemas:
+    Total:
+      type: integer
+      minimum: 0
+      description: >-
+        Number of rows matching the filters (COUNT(*) with the same WHERE clause),
+        independent of `limit` / `offset`. Not the length of this page.
     Source:
       type: object
       properties:
@@ -117,7 +262,9 @@ components:
           type: string
         metadata:
           type: object
-      required: [id, source_id, category, name, latitude, longitude, timestamp]
+          additionalProperties: true
+          description: Parsed source-specific fields. `{}` if absent or malformed.
+      required: [id, source_id, category, name, latitude, longitude, altitude, timestamp, metadata]
     Observation:
       type: object
       properties:
@@ -141,16 +288,35 @@ components:
           type: string
         raw_payload:
           type: object
-      required: [id, entity_id, source_id, latitude, longitude, timestamp]
+          additionalProperties: true
+          description: Parsed upstream record. `{}` if absent or malformed.
+      required:
+        [
+          id,
+          entity_id,
+          source_id,
+          latitude,
+          longitude,
+          altitude,
+          speed,
+          heading,
+          timestamp,
+          raw_payload
+        ]
     ErrorResponse:
       type: object
       properties:
         status:
           type: integer
+          description: Mirrors the HTTP status code
         error:
           type: string
+          description: HTTP reason phrase, e.g. `Bad Request`, `Not Found`
         message:
           type: string
+          description: Safe, human-readable message. Never contains a stack trace.
         details:
           type: object
-      required: [status, error, message]
+          nullable: true
+          description: Always null
+      required: [status, error, message, details]
