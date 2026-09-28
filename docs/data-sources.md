@@ -116,11 +116,11 @@ filter:
 | :-- | :-- | :-- | :-- |
 | `external_id` | expression | **yes** | Stable id for the entity. Stored as `entities.id` in the form `<source name>:<external_id>`. Records where it resolves to nothing or `""` are skipped. |
 | `name` | expression | the loader does not check it | Display name. Falls back to the id when it resolves to nothing. |
-| `category` | string (literal) | no | One of the canonical categories below. If absent, `layer_type` is used, then `general`. |
+| `category` | string (literal) | no | Any lowercase snake_case id. If absent, the source's `layer.id` is used (which itself defaults to `layer_type`). |
 | `metadata` | map of key to expression | no | Values copied from the record into `entities.metadata`. Keys that resolve to nothing are dropped. |
 | `derived` | map of key to derived field | no | Computed metadata. See below. A derived key overrides a `metadata` key with the same name. |
 
-`category` is a literal string, not a path. The canonical categories (`ENTITY_CATEGORIES`) are:
+`category` is a literal string, not a path. It is an open set: any lowercase snake_case id is valid. These six legacy categories (`ENTITY_CATEGORIES`) have hand-drawn frontend styles, used when a source has no `display:` block:
 
 | Category | Marker | Colour |
 | :-- | :-- | :-- |
@@ -231,9 +231,57 @@ In `append` mode, a record that repeats an instant already stored is ignored (`I
 
 If `recording` is omitted, the mode is `append`.
 
-### Display options
+### `layer` and `display`
 
-There are none. The engine has no `display`, `style`, `icon`, `labels`, `cache` or `history` block. Unknown keys in a source file are ignored. Marker shape and colour are chosen by the frontend from `entity.category` alone (see `frontend/src/components/globeMarkers.ts`). The only per-entity rendering input is `metadata.radius_km` on `atc_zone` entities, which sizes the ground circle. The entity inspector also shows a "Listen to ATC (LiveATC.net)" link when an `atc_zone` entity has `metadata.liveatc_url`.
+Both blocks are optional. They tell the frontend which legend layer a source feeds and how its entities look, so a new feed needs no frontend change. The backend applies defaults and serves the result on `GET /api/sources` and in the WS `initial_state` frame. A block that is present but malformed rejects the whole file with a clear error, for example `Skipping invalid source definition …: invalid layer.group "Nope" (expected one of: …)`. The one exception is an unknown `display.icon`: that logs a warning and falls back to `dot`.
+
+```yaml
+layer:
+  id: geological              # legend layer key, lowercase snake_case
+  name: Earthquakes           # legend label
+  group: Hazards              # legend group
+  description: USGS, past hour
+
+display:
+  icon: quake                 # icon registry key
+  color: '#ff0055'            # base colour, hex
+  color_by:                   # optional; exactly one of `stops` or `map`
+    field: metadata.magnitude # path into the entity: metadata.*, altitude, speed, heading
+    stops: [[0, '#ffd166'], [3, '#ff9e00'], [5, '#ff3b3b'], [7, '#ff0055']]
+    # map: { high: '#ff0000', low: '#00ff00' }
+    # default: '#888888'
+  size: 1.0                   # marker scale multiplier
+  rotate: false               # rotate the icon to heading
+  trail: { enabled: false, max_points: 20 }
+  ttl: '24h'                  # hide + prune entities not updated within this long
+  fields:                     # entity card rows, in order
+    - { path: metadata.magnitude, label: Magnitude, format: number, precision: 1 }
+    - { path: metadata.url, label: Details, format: link }
+```
+
+| Field | Default | Rules |
+| :-- | :-- | :-- |
+| `layer.id` | `layer_type` in snake_case | `^[a-z][a-z0-9_]*$`. Also the default `entity.category`. Several sources may share one layer id; the legend merges them into one row. |
+| `layer.name` | `display_name` | String. |
+| `layer.group` | `Other` | One of `Aviation`, `Maritime`, `Space`, `Hazards`, `Weather`, `Environment`, `Conflict`, `Infrastructure`, `Cyber`, `News`, `Other`. |
+| `layer.description` | `""` | String, shown under the name in the legend. |
+| `display.icon` | `dot` | Icon key (list below). Unknown key: warning, then `dot`. |
+| `display.color` | `#9ca3af` | Hex colour (`#rgb`, `#rrggbb`, with or without alpha). |
+| `display.color_by.field` | | Required inside `color_by`. |
+| `display.color_by.stops` | | `[number, colour]` pairs in strictly ascending order. Colours are interpolated linearly between stops and clamped outside them. |
+| `display.color_by.map` | | Exact match on the stringified value. |
+| `display.color_by.default` | `display.color` | Used when the value is missing or unmatched. |
+| `display.size` | `1` | Number in (0, 10]. |
+| `display.rotate` | `false` | Rotates the marker to the reported heading, else to the bearing between the last two positions. Use it with nose-first icons (`plane`, `helicopter`, `ship`, `rocket`). |
+| `display.trail` | `{ enabled: false, max_points: 20 }` | `max_points` is an integer in [1, 1000]. |
+| `display.ttl` | none (never expires) | `"90s"`, `"15m"`, `"24h"`, `"7d"` or a bare number of seconds. Compared against the entity `timestamp` (the source's own time when mapped, else ingest time). |
+| `display.fields[]` | `[]` | `path` required; `label` defaults to the path; `format` is `text` (default), `number` (`precision` 0 to 10), `datetime` (relative time plus UTC; ISO or epoch s/ms), `link` (http(s) only, opens in a new tab with `rel="noopener noreferrer"`) or `bool`. Optional `prefix` / `suffix`. |
+
+Icon keys: `dot`, `plane`, `helicopter`, `ship`, `satellite`, `rocket`, `iss`, `quake`, `volcano`, `fire`, `storm`, `lightning`, `flood`, `tsunami`, `radiation`, `nuclear`, `biohazard`, `factory`, `power`, `cable`, `tower`, `antenna`, `port`, `airport`, `military`, `conflict`, `explosion`, `alert`, `news`, `shield`, `bug`, `buoy`, `balloon`, `camera`, `pin`.
+
+The resolved `display` also carries `declared` (false when the YAML had no `display:` block) and `ttl_seconds`. A source without a declared `display` is drawn with the legacy style of its category (the table under [`entity`](#entity)). `atc_zone` entities additionally get a ground circle sized from `metadata.radius_km`, and the inspector shows a "Listen to ATC (LiveATC.net)" link when `metadata.liveatc_url` is set.
+
+TTL is enforced twice: the backend's retention job deletes expired entities and their observations every 60 seconds and broadcasts `entity_remove`, and the frontend hides and drops expired entities on its own every 15 seconds.
 
 ## Worked example
 
@@ -321,13 +369,15 @@ and one observation with id `obs_usgs_earthquakes:ci40669442`, which is overwrit
 
 These five files are loaded by default.
 
-| File | Display name | Category | Feed | Interval | Mode |
-| :-- | :-- | :-- | :-- | :-- | :-- |
-| `adsb_military.yaml` | Military Flights ADSB | `aircraft` | `https://opendata.adsb.fi/api/v2/mil` (JSON, `ac`) | 30s | append |
-| `atc_facilities.yaml` | ATC Facilities (OurAirports) | `atc_zone` | `https://davidmegginson.github.io/ourairports-data/airports.csv` (CSV, filtered to large and medium airports that have an ICAO code) | 24h | upsert |
-| `iss_position.yaml` | ISS Position Tracker | `satellite` | `https://api.wheretheiss.at/v1/satellites/25544` (JSON, single object) | 30s | append |
-| `safecast_radiation.yaml` | Safecast Radiation Monitoring | `radiation` | `https://api.safecast.org/measurements.json?limit=100` (JSON array) | 300s | upsert |
-| `usgs_earthquakes.yaml` | USGS Earthquakes | `geological` | `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson` (GeoJSON) | 60s | upsert |
+| File | Display name | Layer (group) | Icon | TTL | Feed | Interval | Mode |
+| :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
+| `adsb_military.yaml` | Military Flights ADSB | `aircraft` (Aviation) | `plane`, rotated, coloured by altitude | 5m | `https://opendata.adsb.fi/api/v2/mil` (JSON, `ac`) | 30s | append |
+| `atc_facilities.yaml` | ATC Facilities (OurAirports) | `atc_zone` (Aviation) | `tower` | none | `https://davidmegginson.github.io/ourairports-data/airports.csv` (CSV, filtered to large and medium airports that have an ICAO code) | 24h | upsert |
+| `iss_position.yaml` | ISS Position Tracker | `satellite` (Space) | `iss` | none | `https://api.wheretheiss.at/v1/satellites/25544` (JSON, single object) | 30s | append |
+| `safecast_radiation.yaml` | Safecast Radiation Monitoring | `radiation` (Environment) | `radiation`, coloured by CPM | none (the feed serves historical readings) | `https://api.safecast.org/measurements.json?limit=100` (JSON array) | 300s | upsert |
+| `usgs_earthquakes.yaml` | USGS Earthquakes | `geological` (Hazards) | `quake`, coloured by magnitude | 24h | `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson` (GeoJSON) | 60s | upsert |
+
+Each shipped layer id equals its legacy category, so `entity.category` is left to default to it.
 
 `atc_facilities.yaml` is the only shipped file that uses `filter` and `entity.derived`. It computes `radius_km`, `zone_note` and `liveatc_url`. The radii are an illustrative stand-in sized by airport class, not real control-zone boundaries.
 

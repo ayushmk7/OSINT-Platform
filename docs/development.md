@@ -69,6 +69,7 @@ All are optional and read by `backend/src/index.ts`. The template is [`backend/.
 | `SOURCES_DIR` | `<repo>/sources.d` | Directory of source YAML files. The default is computed from the backend's own location, so it works for both `src/` (dev) and `dist/` (build). |
 | `DB_PATH` | `mk-osint.db` | SQLite file. A relative path resolves against the process working directory, which is `backend/` under the npm scripts, giving `backend/mk-osint.db`. WAL mode also creates `-wal` and `-shm` files next to it. |
 | `INGEST_ENABLED` | enabled | Set to `false` to register sources without polling them. The API and WebSocket still serve whatever is already in the database. Any other value, or leaving it unset, enables ingestion. |
+| `MKOSINT_DB_MAX_MB` | `500` | Database size ceiling for the retention job. Above it, the oldest observations are pruned until usage is under 90%, then `PRAGMA incremental_vacuum` runs. `0` disables the guard. Shrinking the file on disk needs a database created by this version (`auto_vacuum = INCREMENTAL`). |
 
 `dotenv` loads `.env` from the process working directory. With the npm scripts that is `backend/`, so put overrides in `backend/.env` (it is gitignored) or export them in your shell:
 
@@ -128,7 +129,7 @@ CI runs `npm run format:check`, so run `make format` before committing. There is
 
 ## Marker icon preview
 
-[`tools/tactical-icon-preview.html`](../tools/tactical-icon-preview.html) is a standalone page with no build step. Open it directly in a browser to inspect the globe's marker silhouettes at large size and at several rotations, which shows how heading rotation looks. It carries its own copy of the Canvas 2D drawing functions, so it does not update automatically when `frontend/src/components/globeMarkers.ts` changes. It covers every canonical category, including the `atc_zone` tower.
+[`tools/tactical-icon-preview.html`](../tools/tactical-icon-preview.html) is a standalone page with no build step. Open it directly in a browser to inspect the globe's marker silhouettes at large size and at several rotations, which shows how heading rotation looks. It carries its own copy of the Canvas 2D drawing functions, so it does not update automatically when `frontend/src/components/globeMarkers.ts` changes. It covers every canonical category, including the `atc_zone` tower. It does not include the data-driven icon registry (`frontend/src/components/markerIcons.ts`); to eyeball those, import `markerForIcon` from the running dev server in the browser console, or rely on `markerIcons.test.ts`, which checks that every contract icon key draws in its given colour only.
 
 ## Continuous integration
 
