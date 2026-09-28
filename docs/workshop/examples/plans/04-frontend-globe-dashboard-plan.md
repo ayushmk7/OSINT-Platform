@@ -8,7 +8,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
 
 - [ ] **Step 1.1: Create Sources Slice (`frontend/src/store/slices/sourcesSlice.ts`)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/store/slices/sourcesSlice.ts`
+  File: `frontend/src/store/slices/sourcesSlice.ts`
   ```typescript
   import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
@@ -64,7 +64,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
 
 - [ ] **Step 1.2: Create Entities Slice (`frontend/src/store/slices/entitiesSlice.ts`)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/store/slices/entitiesSlice.ts`
+  File: `frontend/src/store/slices/entitiesSlice.ts`
   ```typescript
   import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
@@ -135,7 +135,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
 
 - [ ] **Step 1.3: Create RTK Query Service (`frontend/src/store/api/osintApi.ts`)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/store/api/osintApi.ts`
+  File: `frontend/src/store/api/osintApi.ts`
   ```typescript
   import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
   import { SourceRecord } from '../slices/sourcesSlice';
@@ -165,7 +165,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
 
 - [ ] **Step 1.4: Configure Redux Store (`frontend/src/store/index.ts`)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/store/index.ts`
+  File: `frontend/src/store/index.ts`
   ```typescript
   import { configureStore } from '@reduxjs/toolkit';
   import { useDispatch, useSelector, type TypedUseSelectorHook } from 'react-redux';
@@ -239,7 +239,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
 
 - [ ] **Step 1.5: Write Unit Tests for Slices (`frontend/src/store/slices/__tests__/slices.test.ts`)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/store/slices/__tests__/slices.test.ts`
+  File: `frontend/src/store/slices/__tests__/slices.test.ts`
   ```typescript
   import entitiesReducer, { setInitialEntities, upsertEntity, setSelectedEntityId, setActiveCategoryFilter } from '../entitiesSlice';
   import sourcesReducer, { setSources, toggleSourceEnabled } from '../sourcesSlice';
@@ -301,7 +301,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
 
 - [ ] **Step 2.1: Implement WebSocket Telemetry Hook (`frontend/src/hooks/useWebSocket.ts`)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/hooks/useWebSocket.ts`
+  File: `frontend/src/hooks/useWebSocket.ts`
   ```typescript
   import { useEffect, useState, useRef } from 'react';
   import { useDispatch } from 'react-redux';
@@ -404,7 +404,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
 
 - [ ] **Step 2.2: Write Unit Tests for `useWebSocket` Hook (`frontend/src/hooks/__tests__/useWebSocket.test.ts`)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/hooks/__tests__/useWebSocket.test.ts`
+  File: `frontend/src/hooks/__tests__/useWebSocket.test.ts`
   ```typescript
   import { renderHook, act } from '@testing-library/react';
   import { Provider } from 'react-redux';
@@ -477,7 +477,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
 
 - [ ] **Step 3.2: Implement Telemetry Stats Banner (`frontend/src/components/TelemetryStatsBanner.tsx`)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/TelemetryStatsBanner.tsx`
+  File: `frontend/src/components/TelemetryStatsBanner.tsx`
   ```typescript
   import React from 'react';
   import { Box, Typography, Chip, Stack } from '@mui/material';
@@ -533,7 +533,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
 
 - [ ] **Step 3.3: Implement Layer Control Drawer (`frontend/src/components/LayerControlDrawer.tsx`)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/LayerControlDrawer.tsx`
+  File: `frontend/src/components/LayerControlDrawer.tsx`
   ```typescript
   import React from 'react';
   import { Drawer, Box, Typography, Checkbox, FormControlLabel, FormGroup, Divider, ButtonGroup, Button } from '@mui/material';
@@ -612,7 +612,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
 
 - [ ] **Step 3.4: Implement Entity Details Inspector (`frontend/src/components/EntityDetailsDrawer.tsx`)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/EntityDetailsDrawer.tsx`
+  File: `frontend/src/components/EntityDetailsDrawer.tsx`
   ```typescript
   import React from 'react';
   import { Drawer, Box, Typography, IconButton, Chip, Divider, Table, TableBody, TableCell, TableRow } from '@mui/material';
@@ -720,7 +720,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
 
 - [ ] **Step 3.5: Write Component Unit Tests (`frontend/src/components/__tests__/components.test.tsx`)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/__tests__/components.test.tsx`
+  File: `frontend/src/components/__tests__/components.test.tsx`
   ```typescript
   import React from 'react';
   import { render, screen } from '@testing-library/react';
@@ -951,7 +951,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
   }
   ```
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/GlobeView.tsx`
+  File: `frontend/src/components/GlobeView.tsx`
   ```typescript
   import { useEffect, useRef, type FC } from 'react';
   import { Box } from '@mui/material';
@@ -1152,7 +1152,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
   and a `position: relative` container that the globe fills. (Step 5 adds the filter selector and
   overlays into this same structure.)
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/App.tsx`
+  File: `frontend/src/App.tsx`
   ```typescript
   import { useState, type FC } from 'react';
   import { Box, AppBar, Toolbar, IconButton } from '@mui/material';
@@ -1198,7 +1198,7 @@ This step-by-step TDD implementation plan details the creation of the Vite + Rea
   Update `main.tsx` to add the Redux `<Provider>` (step 1's `main.tsx` had none, so any
   `useSelector` would throw). Keep the single `ThemeProvider`/`CssBaseline` here too:
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/main.tsx`
+  File: `frontend/src/main.tsx`
   ```tsx
   import React from 'react';
   import ReactDOM from 'react-dom/client';

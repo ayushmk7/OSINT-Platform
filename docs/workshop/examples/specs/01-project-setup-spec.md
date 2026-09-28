@@ -10,7 +10,7 @@ This specification details the foundational architecture for the MK-OSINT Intell
 ## 2. Workspace & Monorepo Structure
 
 ```
-vibe-coding-osint-platform/
+mk-osint/
 ├── Makefile
 ├── package.json
 ├── docs/

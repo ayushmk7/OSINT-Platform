@@ -9,10 +9,10 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
 - [ ] **Step 1.1: Create Root `package.json`**
   Write the root `package.json` file configuring workspaces for `backend` and `frontend`, and convenience npm scripts.
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/package.json`
+  File: `package.json`
   ```json
   {
-    "name": "vibe-coding-osint-platform",
+    "name": "mk-osint",
     "version": "1.0.0",
     "private": true,
     "workspaces": [
@@ -36,7 +36,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
 - [ ] **Step 1.2: Create Root `Makefile`**
   Write the root `Makefile` standardizing development commands.
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/Makefile`
+  File: `Makefile`
 
   > **Do NOT put `rtk` in this file.** `rtk` is your (the agent's) shell wrapper; it does
   > not exist on attendees' machines. The Makefile calls `npm`/`npx` directly.
@@ -85,7 +85,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
 
 - [ ] **Step 2.1: Initialize Backend `package.json`, `tsconfig.json`, and `jest.config.js`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/package.json`
+  File: `backend/package.json`
   ```json
   {
     "name": "mk-osint-backend",
@@ -122,7 +122,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   }
   ```
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/tsconfig.json`
+  File: `backend/tsconfig.json`
   ```json
   {
     "compilerOptions": {
@@ -144,7 +144,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   }
   ```
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/jest.config.js`
+  File: `backend/jest.config.js`
   ```javascript
   module.exports = {
     preset: 'ts-jest',
@@ -159,7 +159,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
 
 - [ ] **Step 2.2: Write SQLite Database Initialization Test (TDD)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/__tests__/database.test.ts`
+  File: `backend/src/__tests__/database.test.ts`
   ```typescript
   import { initDatabase, closeDatabase } from '../db/database';
   import Database from 'better-sqlite3';
@@ -207,7 +207,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
 
 - [ ] **Step 2.3: Implement `backend/src/db/database.ts`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/db/database.ts`
+  File: `backend/src/db/database.ts`
 
   > Exposes a module **singleton** (`getDatabase`) so routes, query helpers, the ingestion
   > scheduler, and the WebSocket server all share one connection. Steps 2–4 import
@@ -305,7 +305,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
 
 - [ ] **Step 3.1: Create OpenAPI 3.0 Contract File**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/api/openapi.yaml`
+  File: `backend/src/api/openapi.yaml`
   ```yaml
   openapi: 3.0.3
   info:
@@ -430,7 +430,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
 
 - [ ] **Step 3.2: Write Express Routes Integration Test (TDD)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/__tests__/routes.test.ts`
+  File: `backend/src/__tests__/routes.test.ts`
   ```typescript
   import request from 'supertest';
   import { createApp } from '../app';
@@ -479,7 +479,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
 
 - [ ] **Step 3.3: Implement `backend/src/app.ts` and `backend/src/index.ts`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/app.ts`
+  File: `backend/src/app.ts`
   ```typescript
   import express, { Express, Request, Response } from 'express';
   import cors from 'cors';
@@ -518,7 +518,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   }
   ```
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/index.ts`
+  File: `backend/src/index.ts`
   ```typescript
   import dotenv from 'dotenv';
   import { initDatabase } from './db/database';
@@ -545,7 +545,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
 
 - [ ] **Step 4.1: Initialize Frontend Configuration Files**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/package.json`
+  File: `frontend/package.json`
   ```json
   {
     "name": "mk-osint-frontend",
@@ -579,7 +579,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   }
   ```
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/tsconfig.json`
+  File: `frontend/tsconfig.json`
   ```json
   {
     "compilerOptions": {
@@ -603,7 +603,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   }
   ```
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/vite.config.ts`
+  File: `frontend/vite.config.ts`
 
   > Two things this config MUST have:
   > 1. `cesium()` from `vite-plugin-cesium` — it copies Cesium's static assets and defines
@@ -643,7 +643,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   Create **exactly one** theme module. Do not create a second one later (a `darkTheme` vs
   `tacticalTheme` split caused theme inconsistencies in the previous run).
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/theme.ts`
+  File: `frontend/src/theme.ts`
   ```typescript
   import { createTheme } from '@mui/material/styles';
 
@@ -686,7 +686,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   now, never a placeholder. Cesium's static assets and `CESIUM_BASE_URL` come from
   `vite-plugin-cesium` (Step 4.1) — do not hotlink Cesium from a CDN.
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/GlobeView.tsx`
+  File: `frontend/src/components/GlobeView.tsx`
   ```tsx
   import { useEffect, useRef, type FC } from 'react';
   import { Box } from '@mui/material';
@@ -763,7 +763,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   };
   ```
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/index.html`
+  File: `frontend/index.html`
   ```html
   <!DOCTYPE html>
   <html lang="en">
@@ -779,7 +779,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   </html>
   ```
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/App.tsx`
+  File: `frontend/src/App.tsx`
 
   The globe fills the viewport; the app bar floats over it. (Step 4 adds the layer/inspector
   drawers and telemetry banner to this same shell.)
@@ -826,7 +826,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   };
   ```
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/main.tsx`
+  File: `frontend/src/main.tsx`
   ```tsx
   import React from 'react';
   import ReactDOM from 'react-dom/client';
@@ -849,7 +849,7 @@ This step-by-step TDD plan details the creation of the monorepo structure, root 
   `vitest run` exits non-zero when it finds no test files, and we do NOT use a
   "pass with no tests" escape hatch. Add a real, pure unit test of the theme (no DOM needed):
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/__tests__/theme.test.ts`
+  File: `frontend/src/__tests__/theme.test.ts`
   ```typescript
   import { describe, it, expect } from 'vitest';
   import { tacticalTheme } from '../theme';

@@ -8,7 +8,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 
 - [ ] **Step 1.1: Create `sources.d/usgs_earthquakes.yaml`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/sources.d/usgs_earthquakes.yaml`
+  File: `sources.d/usgs_earthquakes.yaml`
   ```yaml
   schema_version: 1
   name: usgs_earthquakes
@@ -55,7 +55,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 
 - [ ] **Step 1.2: Create `sources.d/iss_position.yaml`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/sources.d/iss_position.yaml`
+  File: `sources.d/iss_position.yaml`
   ```yaml
   schema_version: 1
   name: iss_position
@@ -98,7 +98,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 
 - [ ] **Step 1.3: Create `sources.d/adsb_military.yaml`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/sources.d/adsb_military.yaml`
+  File: `sources.d/adsb_military.yaml`
   ```yaml
   schema_version: 1
   name: adsb_military
@@ -145,7 +145,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 
 - [ ] **Step 1.4: Create `sources.d/safecast_radiation.yaml`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/sources.d/safecast_radiation.yaml`
+  File: `sources.d/safecast_radiation.yaml`
   ```yaml
   schema_version: 1
   name: safecast_radiation
@@ -191,7 +191,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 
 - [ ] **Step 2.1: Write YAML Loader Test (TDD)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/__tests__/yaml-loader.test.ts`
+  File: `backend/src/__tests__/yaml-loader.test.ts`
   ```typescript
   import { loadSourcesFromDir, SourceConfig } from '../engine/yaml-loader';
   import path from 'path';
@@ -221,7 +221,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 
 - [ ] **Step 2.2: Implement `backend/src/engine/yaml-loader.ts`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/engine/yaml-loader.ts`
+  File: `backend/src/engine/yaml-loader.ts`
   ```typescript
   import fs from 'fs';
   import path from 'path';
@@ -304,7 +304,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 
 - [ ] **Step 3.1: Write HTTP Fetcher Test (TDD)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/__tests__/http-fetcher.test.ts`
+  File: `backend/src/__tests__/http-fetcher.test.ts`
   ```typescript
   import { fetchUrl } from '../engine/http-fetcher';
 
@@ -322,7 +322,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 
 - [ ] **Step 3.2: Implement `backend/src/engine/http-fetcher.ts`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/engine/http-fetcher.ts`
+  File: `backend/src/engine/http-fetcher.ts`
   ```typescript
   export interface FetchOptions {
     url: string;
@@ -379,7 +379,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 
 - [ ] **Step 4.1: Write Parsers Unit Test (TDD)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/__tests__/parsers.test.ts`
+  File: `backend/src/__tests__/parsers.test.ts`
   ```typescript
   import { parsePayload } from '../engine/parsers';
 
@@ -422,7 +422,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 
 - [ ] **Step 4.2: Implement `backend/src/engine/parsers/index.ts`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/engine/parsers/index.ts`
+  File: `backend/src/engine/parsers/index.ts`
   ```typescript
   import { XMLParser } from 'fast-xml-parser';
   import Papa from 'papaparse';
@@ -491,7 +491,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 
 - [ ] **Step 5.1: Write Field Mapper Test (TDD)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/__tests__/field-mapper.test.ts`
+  File: `backend/src/__tests__/field-mapper.test.ts`
   ```typescript
   import { mapRecord } from '../engine/field-mapper';
   import { SourceConfig } from '../engine/yaml-loader';
@@ -561,7 +561,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 
 - [ ] **Step 5.2: Implement `backend/src/engine/field-mapper.ts`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/engine/field-mapper.ts`
+  File: `backend/src/engine/field-mapper.ts`
   ```typescript
   import { SourceConfig } from './yaml-loader';
 
@@ -727,7 +727,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 
 - [ ] **Step 6.1: Write Scheduler Integration Test (TDD)**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/__tests__/scheduler.test.ts`
+  File: `backend/src/__tests__/scheduler.test.ts`
   ```typescript
   // Mock the network so pollSource runs the real parse → map → persist path against a
   // fixed fixture (no live HTTP).
@@ -821,7 +821,7 @@ This step-by-step TDD implementation plan details the creation of the backend YA
 
 - [ ] **Step 6.2: Implement `backend/src/engine/scheduler.ts`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/backend/src/engine/scheduler.ts`
+  File: `backend/src/engine/scheduler.ts`
   ```typescript
   import Database from 'better-sqlite3';
   import { loadSourcesFromDir, SourceConfig } from './yaml-loader';

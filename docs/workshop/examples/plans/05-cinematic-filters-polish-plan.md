@@ -8,7 +8,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
 
 - [ ] **Step 1.1: Write Unit Test for `filterSlice`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/store/slices/__tests__/filterSlice.test.ts`
+  File: `frontend/src/store/slices/__tests__/filterSlice.test.ts`
   ```typescript
   import filterReducer, {
     setFilterMode,
@@ -66,7 +66,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
 
 - [ ] **Step 1.2: Implement `filterSlice.ts`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/store/slices/filterSlice.ts`
+  File: `frontend/src/store/slices/filterSlice.ts`
   ```typescript
   import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
@@ -111,7 +111,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
 
 - [ ] **Step 1.3: Update Redux Store to Include `filterSlice`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/store/index.ts`
+  File: `frontend/src/store/index.ts`
 
   > Add the `filter` reducer but **keep** the typed hooks created in step 4 — `FilterModeSelector`
   > and `PerformanceControls` import `useAppDispatch`/`useAppSelector` from `../store`.
@@ -152,7 +152,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
 
 - [ ] **Step 2.1: Create CRT Overlay CSS**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/filters/crt.css`
+  File: `frontend/src/components/filters/crt.css`
   ```css
   .crt-overlay-container {
     position: absolute;
@@ -217,7 +217,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
 
 - [ ] **Step 2.2: Implement `CrtOverlay.tsx` Component**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/filters/CrtOverlay.tsx`
+  File: `frontend/src/components/filters/CrtOverlay.tsx`
   ```tsx
   import React from 'react';
   import './crt.css';
@@ -239,7 +239,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
 
 - [ ] **Step 3.1: Create Night Vision CSS**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/filters/night-vision.css`
+  File: `frontend/src/components/filters/night-vision.css`
   ```css
   .nvg-overlay-container {
     position: absolute;
@@ -335,7 +335,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
 
 - [ ] **Step 3.2: Implement `NightVisionOverlay.tsx` Component**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/filters/NightVisionOverlay.tsx`
+  File: `frontend/src/components/filters/NightVisionOverlay.tsx`
   ```tsx
   import React from 'react';
   import './night-vision.css';
@@ -360,7 +360,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
 
 - [ ] **Step 4.1: Create FLIR Overlay CSS**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/filters/flir.css`
+  File: `frontend/src/components/filters/flir.css`
   ```css
   .flir-overlay-container {
     position: absolute;
@@ -420,7 +420,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
 
 - [ ] **Step 4.2: Implement `FlirThermalOverlay.tsx` Component**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/filters/FlirThermalOverlay.tsx`
+  File: `frontend/src/components/filters/FlirThermalOverlay.tsx`
   ```tsx
   import React from 'react';
   import './flir.css';
@@ -448,7 +448,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
 
 - [ ] **Step 5.1: Write Unit Test for `FilterModeSelector`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/__tests__/FilterModeSelector.test.tsx`
+  File: `frontend/src/components/__tests__/FilterModeSelector.test.tsx`
   ```tsx
   import React from 'react';
   import { render, screen, fireEvent } from '@testing-library/react';
@@ -491,7 +491,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
 
 - [ ] **Step 5.2: Implement `FilterModeSelector.tsx` Component**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/FilterModeSelector.tsx`
+  File: `frontend/src/components/FilterModeSelector.tsx`
   ```tsx
   import React from 'react';
   import { ToggleButtonGroup, ToggleButton, Typography, Box } from '@mui/material';
@@ -556,7 +556,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
 
 - [ ] **Step 6.1: Write Unit Test for `PerformanceControls`**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/__tests__/PerformanceControls.test.tsx`
+  File: `frontend/src/components/__tests__/PerformanceControls.test.tsx`
   ```tsx
   import React from 'react';
   import { render, screen, fireEvent } from '@testing-library/react';
@@ -594,7 +594,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
 
 - [ ] **Step 6.2: Implement `PerformanceControls.tsx` Component**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/PerformanceControls.tsx`
+  File: `frontend/src/components/PerformanceControls.tsx`
   ```tsx
   import React, { useEffect, useRef } from 'react';
   import { Box, Chip, FormControlLabel, Switch, Paper } from '@mui/material';
@@ -689,7 +689,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
 
 - [ ] **Step 7.1: Write Integration Test Suite for Filter Overlays**
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/components/filters/__tests__/FilterOverlays.test.tsx`
+  File: `frontend/src/components/filters/__tests__/FilterOverlays.test.tsx`
   ```tsx
   import React from 'react';
   import { render, screen } from '@testing-library/react';
@@ -751,7 +751,7 @@ This step-by-step TDD plan details the creation of Redux filter state management
   object or no arg — never a bare string. The inline `TelemetryStatsBanner` already renders the
   title, so there is no separate title `Typography` (that would duplicate it).
 
-  File: `/Users/alevsk/Development/vibe-coding-osint-platform/frontend/src/App.tsx`
+  File: `frontend/src/App.tsx`
   ```tsx
   import { useState, type FC } from 'react';
   import { Box, AppBar, Toolbar, IconButton } from '@mui/material';
