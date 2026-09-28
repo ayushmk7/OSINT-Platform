@@ -32,6 +32,9 @@ export interface InsightStatus {
 export interface FlyToRequest {
   entityId: string;
   nonce: number;
+  /** Fallback target when the entity is not (yet) in the store, e.g. a located feed item. */
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface InsightsState {
@@ -66,8 +69,13 @@ const insightsSlice = createSlice({
     setInsightStatus(state, action: PayloadAction<InsightStatus | null>) {
       state.status = action.payload;
     },
-    requestFlyTo(state, action: PayloadAction<string>) {
-      state.flyTo = { entityId: action.payload, nonce: (state.flyTo?.nonce ?? 0) + 1 };
+    requestFlyTo(
+      state,
+      action: PayloadAction<string | { entityId: string; latitude?: number; longitude?: number }>
+    ) {
+      const req =
+        typeof action.payload === 'string' ? { entityId: action.payload } : action.payload;
+      state.flyTo = { ...req, nonce: (state.flyTo?.nonce ?? 0) + 1 };
     }
   }
 });

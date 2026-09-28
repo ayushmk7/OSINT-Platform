@@ -10,7 +10,8 @@ import { EntityDetailsDrawer } from './components/EntityDetailsDrawer';
 import { FilterModeSelector } from './components/FilterModeSelector';
 import { GlobeStyleSelector } from './components/GlobeStyleSelector';
 import { PerformanceControls } from './components/PerformanceControls';
-import { InsightsPanel } from './components/InsightsPanel';
+import { IntelDock, type DockTab } from './components/IntelDock';
+import { SearchBox } from './components/SearchBox';
 import { HudPanel } from './components/HudPrimitives';
 import { CrtOverlay } from './components/filters/CrtOverlay';
 import { NightVisionOverlay } from './components/filters/NightVisionOverlay';
@@ -30,21 +31,41 @@ const SIDE_TOP = 80;
  *   HUD layer               20  top bar, layers, inspector, performance chip
  *   menus / tooltips        1300+ (MUI default)
  *
- * Phones (< sm): layers and the inspector become bottom sheets; the layers panel starts
- * collapsed and folds away whenever an entity is opened.
+ * Right column (sm+): the intel dock (Feed / Signals / AI tabs); a selected entity's card
+ * takes its place until closed. Phones (< sm): the search box gets its own row, the dock sits
+ * under the top bar (collapsed to its tab strip by default), and layers and the inspector are
+ * bottom sheets; the layers panel folds away whenever an entity or the dock is opened.
  */
 export const App: FC = () => {
   const { isConnected, isReconnecting, messageRate } = useWebSocket();
   const theme = useTheme();
   const isPhone = useMediaQuery(theme.breakpoints.down('sm'), { noSsr: true });
   const [layersOpen, setLayersOpen] = useState(() => !isPhone);
-  const [insightsOpen, setInsightsOpen] = useState(false);
+  const [dockOpen, setDockOpen] = useState(() => !isPhone);
+  const [dockTab, setDockTab] = useState<DockTab>('feed');
   const filterMode = useAppSelector((state) => state.filter.filterMode);
   const selectedId = useAppSelector((state) => state.entities.selectedEntityId);
 
   useEffect(() => {
-    if (isPhone && selectedId) setLayersOpen(false);
+    if (isPhone && selectedId) {
+      setLayersOpen(false);
+      setDockOpen(false);
+    }
   }, [isPhone, selectedId]);
+
+  // Phones have room for one sheet at a time.
+  const openDock = (open: boolean) => {
+    setDockOpen(open);
+    if (open && isPhone) setLayersOpen(false);
+  };
+  const openLayers = () => {
+    setLayersOpen(true);
+    if (isPhone) setDockOpen(false);
+  };
+
+  const dock = (
+    <IntelDock tab={dockTab} onTabChange={setDockTab} open={dockOpen} onOpenChange={openDock} />
+  );
 
   const gutter = { xs: 1, sm: 2 };
   const sheet = { left: 8, right: 8, bottom: 8, top: 'auto' } as const;
@@ -90,6 +111,16 @@ export const App: FC = () => {
             isReconnecting={isReconnecting}
             messageRate={messageRate}
           />
+          <Box
+            sx={{
+              flex: { xs: '1 1 140px', md: '1 1 280px' },
+              maxWidth: { md: 440 },
+              mx: { md: 'auto' },
+              minWidth: 0
+            }}
+          >
+            <SearchBox />
+          </Box>
           <HudPanel
             role="toolbar"
             aria-label="View controls"
@@ -99,7 +130,7 @@ export const App: FC = () => {
               alignItems: 'center',
               gap: 0.75,
               p: '6px',
-              ml: 'auto'
+              ml: { xs: 'auto', md: 0 }
             }}
           >
             <FilterModeSelector />
@@ -127,10 +158,47 @@ export const App: FC = () => {
         >
           <LayerControlDrawer
             open={layersOpen}
-            onOpen={() => setLayersOpen(true)}
+            onOpen={openLayers}
             onClose={() => setLayersOpen(false)}
           />
         </Box>
+
+        {/* Right column (sm+): entity card when something is selected, else the intel dock.
+            The dock stays mounted underneath so its tabs keep their data and filters. */}
+        <Box
+          sx={{
+            position: 'absolute',
+            display: { xs: 'none', sm: 'flex' },
+            flexDirection: 'column',
+            alignItems: 'flex-end',
+            pointerEvents: 'none',
+            right: 16,
+            top: SIDE_TOP,
+            bottom: 64,
+            width: 360,
+            zIndex: 2,
+            visibility: selectedId ? 'hidden' : 'visible'
+          }}
+        >
+          {!isPhone && dock}
+        </Box>
+
+        {/* Phones: the dock sits under the top bar. */}
+        {isPhone && !selectedId && (
+          <Box
+            sx={{
+              position: 'relative',
+              mt: 1,
+              display: 'flex',
+              justifyContent: 'flex-end',
+              height: dockOpen ? 'min(52vh, 460px)' : 'auto',
+              pointerEvents: 'none',
+              zIndex: 2
+            }}
+          >
+            {dock}
+          </Box>
+        )}
 
         {/* Entity inspector */}
         <Box
@@ -150,30 +218,6 @@ export const App: FC = () => {
           }}
         >
           <EntityDetailsDrawer />
-        </Box>
-
-        {/* AI insights: bottom-left beside the layers column (sm+); under the top bar on phones */}
-        <Box
-          sx={{
-            position: 'absolute',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: { xs: 'flex-start', sm: 'flex-end' },
-            alignItems: { xs: 'flex-end', sm: 'flex-start' },
-            pointerEvents: 'none',
-            left: { xs: insightsOpen ? 8 : 'auto', sm: 320 },
-            right: { xs: 8, sm: 'auto' },
-            top: { xs: 72, sm: SIDE_TOP },
-            bottom: { xs: insightsOpen ? '40%' : 'auto', sm: 16 },
-            width: { sm: 320 },
-            zIndex: 2
-          }}
-        >
-          <InsightsPanel
-            open={insightsOpen}
-            onOpen={() => setInsightsOpen(true)}
-            onClose={() => setInsightsOpen(false)}
-          />
         </Box>
 
         {/* Performance chip */}

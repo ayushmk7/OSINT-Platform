@@ -8,6 +8,14 @@ import {
 } from '../store/slices/entitiesSlice';
 import { mergeSources, setSources, type SourceRecord } from '../store/slices/sourcesSlice';
 import { addInsight, type InsightRecord } from '../store/slices/insightsSlice';
+import {
+  addFeedItem,
+  mergeFeedItems,
+  setIndicators,
+  upsertIndicator,
+  type FeedItemRecord,
+  type IndicatorRecord
+} from '../store/slices/feedSlice';
 
 /** Canonical telemetry path — must match `WS_PATH` in the backend WebSocket server. */
 export const WS_TELEMETRY_PATH = '/ws/telemetry';
@@ -37,6 +45,9 @@ interface TelemetryFrame {
     sources?: SourceRecord[];
     /** `entity_remove`: ids deleted server-side (ttl expiry). */
     ids?: string[];
+    /** `initial_state`: newest feed items and every indicator. */
+    feed?: FeedItemRecord[];
+    indicators?: IndicatorRecord[];
   } & Partial<EntityRecord>;
 }
 
@@ -115,6 +126,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): WebSocketState 
         if (payload.type === 'initial_state' && payload.data) {
           if (payload.data.sources) dispatch(setSources(payload.data.sources));
           if (payload.data.entities) dispatch(setInitialEntities(payload.data.entities));
+          if (payload.data.feed) dispatch(mergeFeedItems(payload.data.feed));
+          if (payload.data.indicators) dispatch(setIndicators(payload.data.indicators));
         } else if (payload.type === 'entity_update' && payload.data) {
           dispatch(upsertEntity(payload.data as EntityRecord));
         } else if (payload.type === 'entity_remove' && Array.isArray(payload.data?.ids)) {
@@ -123,6 +136,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): WebSocketState 
           dispatch(mergeSources(payload.data.sources));
         } else if (payload.type === 'ai_insight' && payload.data) {
           dispatch(addInsight(payload.data as unknown as InsightRecord));
+        } else if (payload.type === 'feed_item' && payload.data) {
+          dispatch(addFeedItem(payload.data as unknown as FeedItemRecord));
+        } else if (payload.type === 'indicator_update' && payload.data) {
+          dispatch(upsertIndicator(payload.data as unknown as IndicatorRecord));
         } else if (payload.type === 'ping') {
           // Application-level heartbeat: browsers cannot answer protocol pings from JS.
           ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
