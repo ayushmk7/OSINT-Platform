@@ -1,16 +1,17 @@
 import { useEffect, useRef, type FC } from 'react';
-import { Chip, FormControlLabel, Switch, Paper } from '@mui/material';
-import SpeedIcon from '@mui/icons-material/Speed';
+import { Box, FormControlLabel, Switch, Tooltip } from '@mui/material';
 import { useAppDispatch, useAppSelector } from '../store';
 import { toggleLod, updateFps } from '../store/slices/filterSlice';
+import { hud, monoValue } from '../theme';
+import { HudPanel } from './HudPrimitives';
 
 /**
- * Floating performance HUD (bottom-left of the globe container): live FPS read-out measured on a
+ * Compact performance chip (bottom-right, positioned by App): live FPS read-out measured on a
  * `requestAnimationFrame` loop over a 1-second rolling window, plus the Level-of-Detail toggle
  * that downsamples the globe's render resolution on weaker GPUs.
  *
- * Z-INDEX CONTRACT: sits at 20 (HUD tier) — above the cinematic overlays (10) so a filter never
- * paints over the read-out, below the drawers/modals (MUI default 1200).
+ * Z-INDEX CONTRACT: rendered inside App's HUD layer (20) — above the cinematic overlays (10) so a
+ * filter never paints over the read-out.
  */
 export const PerformanceControls: FC = () => {
   const dispatch = useAppDispatch();
@@ -44,46 +45,53 @@ export const PerformanceControls: FC = () => {
     };
   }, [dispatch]);
 
+  const fpsColor = currentFps >= 55 ? hud.accent : currentFps >= 30 ? hud.warning : hud.danger;
+
   return (
-    <Paper
-      elevation={4}
+    <HudPanel
       data-testid="performance-controls"
       sx={{
-        position: 'absolute',
-        bottom: 24,
-        left: 24,
-        zIndex: 20,
-        p: 1,
-        px: 2,
+        pointerEvents: 'auto',
         display: 'flex',
         alignItems: 'center',
-        gap: 2,
-        backgroundColor: 'rgba(10, 10, 10, 0.85)',
-        backdropFilter: 'blur(8px)',
-        border: '1px solid rgba(0, 255, 157, 0.25)'
+        gap: 1.25,
+        height: 36,
+        pl: 1.25,
+        pr: 0.5,
+        borderRadius: '10px'
       }}
     >
       {fpsVisible && (
-        <Chip
-          icon={<SpeedIcon fontSize="small" />}
-          label={`${currentFps} FPS`}
-          color={currentFps >= 55 ? 'success' : currentFps >= 30 ? 'warning' : 'error'}
-          size="small"
-          variant="outlined"
-        />
+        <Tooltip title="Render frame rate">
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+            <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: fpsColor }} />
+            <Box
+              sx={{ ...monoValue, fontSize: '0.75rem', color: hud.textPrimary, minWidth: '3.2em' }}
+            >
+              {`${currentFps} FPS`}
+            </Box>
+          </Box>
+        </Tooltip>
       )}
-      <FormControlLabel
-        control={
-          <Switch
-            size="small"
-            checked={lodEnabled}
-            onChange={() => dispatch(toggleLod())}
-            inputProps={{ 'aria-label': 'LOD Performance' }}
-          />
-        }
-        label="LOD Performance"
-        slotProps={{ typography: { variant: 'caption', color: 'text.secondary' } }}
-      />
-    </Paper>
+      <Box aria-hidden sx={{ width: '1px', height: 18, bgcolor: hud.hairline }} />
+      <Tooltip title="Level-of-detail mode: lowers render resolution on weaker GPUs">
+        <FormControlLabel
+          control={
+            <Switch
+              size="small"
+              checked={lodEnabled}
+              onChange={() => dispatch(toggleLod())}
+              inputProps={{ 'aria-label': 'LOD Performance' }}
+            />
+          }
+          label="LOD"
+          labelPlacement="start"
+          sx={{ m: 0, gap: 0.25 }}
+          slotProps={{
+            typography: { sx: { fontSize: '0.75rem', color: hud.textSecondary, fontWeight: 500 } }
+          }}
+        />
+      </Tooltip>
+    </HudPanel>
   );
 };

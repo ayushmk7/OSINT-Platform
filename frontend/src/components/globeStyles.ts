@@ -530,6 +530,9 @@ export class GlobeStyleController {
     const { scene } = this.viewer;
     this.addLayer(makeTacticalBaseLayer()).alpha = 1.0;
     scene.globe.baseColor = Cesium.Color.fromCssColorString('#000000');
+    // Ground atmosphere lays a pale blue veil over the dark tiles at globe scale, turning
+    // "tactical dark" into milky slate; the limb glow comes from the sky atmosphere alone.
+    scene.globe.showGroundAtmosphere = false;
     scene.backgroundColor = Cesium.Color.BLACK;
   }
 

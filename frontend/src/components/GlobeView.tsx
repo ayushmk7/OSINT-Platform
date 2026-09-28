@@ -14,6 +14,8 @@ import {
   isEntityVisible,
   colorForCategory,
   zoneRadiusMeters,
+  renderHeight,
+  selectionRingMarker,
   ATC_ZONE_CATEGORY
 } from './globeMarkers';
 import { GlobeStyleController } from './globeStyles';
@@ -22,16 +24,30 @@ import { GlobeStyleController } from './globeStyles';
 const SPIN_PER_TICK = 0.0015;
 
 // Markers are drawn on a 2x (64px) canvas, so 0.5 displays them at their true 32px size.
+// That is the close-up size; SCALE_BY_DISTANCE then shrinks them to ~half that at world view,
+// so 1200 markers read as a density pattern instead of a pile of overlapping icons.
 const MARKER_BASE_SCALE = 0.5;
 const SELECTED_SCALE_BOOST = 1.5;
+const SCALE_BY_DISTANCE = new Cesium.NearFarScalar(1.0e6, 1.0, 2.0e7, 0.52);
+// Light fade with distance: dense clusters soften at world view, full opacity up close.
+const TRANSLUCENCY_BY_DISTANCE = new Cesium.NearFarScalar(3.0e6, 1.0, 2.2e7, 0.8);
+const NO_FADE = new Cesium.NearFarScalar(1.0, 1.0, 2.0, 1.0);
+// The selection ring is never faded, and shrinks less, so the selected target always stands out.
+const RING_SCALE_BY_DISTANCE = new Cesium.NearFarScalar(1.0e6, 1.0, 2.0e7, 0.7);
+
+// Initial framing: the whole disc centred in the viewport with a comfortable margin.
+const HOME_VIEW = { lon: 15, lat: 22, height: 1.75e7 };
 
 // ATC control zones are real ground geometry, not billboards: a 5–9 km circle has to grow and
 // shrink with the camera exactly like the terrain under it, which a screen-space billboard
 // cannot do. They live in `viewer.entities` (Cesium's Entity API) ALONGSIDE the
 // BillboardCollection, in this same viewer — the tower billboard still marks the centre.
-const ZONE_FILL_ALPHA = 0.18;
-const ZONE_SELECTED_FILL_ALPHA = 0.38;
-const ZONE_OUTLINE_ALPHA = 0.95;
+// Kept deliberately faint: the zones are context, not content, and there are hundreds of them.
+const ZONE_FILL_ALPHA = 0.05;
+const ZONE_SELECTED_FILL_ALPHA = 0.22;
+const ZONE_OUTLINE_ALPHA = 0.4;
+// A 5–9 km circle is sub-pixel beyond this range; skip drawing it at all.
+const ZONE_MAX_VISIBLE_DISTANCE_M = 1.5e6;
 
 /** Zone tint: the same violet as the atc_zone marker + layer swatch, so the legend reads true. */
 function zoneColor(alpha: number): Cesium.Color {
@@ -68,7 +84,11 @@ function upsertZone(
         material: new Cesium.ColorMaterialProperty(fill),
         outline: true,
         outlineColor: zoneColor(ZONE_OUTLINE_ALPHA),
-        outlineWidth: 2
+        outlineWidth: 1,
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(
+          0,
+          ZONE_MAX_VISIBLE_DISTANCE_M
+        )
       }
     });
     zones.set(entity.id, zone);
@@ -103,6 +123,7 @@ export const GlobeView: FC = () => {
   const byId = useRef<Map<string, Cesium.Billboard>>(new Map());
   const zonesById = useRef<Map<string, Cesium.Entity>>(new Map());
   const globeStyleRef = useRef<GlobeStyleController | null>(null);
+  const ringRef = useRef<Cesium.Billboard | null>(null);
 
   // Mount once: create the viewer, the billboard layer, and the click handler.
   useEffect(() => {
@@ -136,12 +157,26 @@ export const GlobeView: FC = () => {
     }
 
     viewer.scene.backgroundColor = Cesium.Color.BLACK;
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(HOME_VIEW.lon, HOME_VIEW.lat, HOME_VIEW.height)
+    });
     (viewer.cesiumWidget.creditContainer as HTMLElement).style.display = 'none';
 
     // One BillboardCollection for every entity marker — far cheaper than an Entity per target.
     const billboards = viewer.scene.primitives.add(new Cesium.BillboardCollection());
     billboardsRef.current = billboards;
     viewerRef.current = viewer;
+
+    // Selection ring: one extra billboard in the same collection, moved onto whichever marker is
+    // selected. Added first so it draws beneath the marker it surrounds.
+    ringRef.current = billboards.add({
+      show: false,
+      position: Cesium.Cartesian3.ZERO,
+      image: selectionRingMarker(),
+      color: Cesium.Color.WHITE,
+      scale: MARKER_BASE_SCALE * 1.9,
+      scaleByDistance: RING_SCALE_BY_DISTANCE
+    });
 
     // Owns the globe's base look. Constructed here so it can snapshot Cesium's pristine defaults
     // off a freshly built viewer; the style effect below applies the selected look.
@@ -163,6 +198,23 @@ export const GlobeView: FC = () => {
       if (entityId) dispatch(setSelectedEntityId(entityId));
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
+    // Pointer cursor over a marker. Picking renders a pick pass, so it runs at most once per
+    // animation frame no matter how fast the mouse moves.
+    let hoverPos: Cesium.Cartesian2 | null = null;
+    let hoverFrame = 0;
+    handler.setInputAction((movement: Cesium.ScreenSpaceEventHandler.MotionEvent) => {
+      hoverPos = movement.endPosition;
+      if (hoverFrame) return;
+      hoverFrame = requestAnimationFrame(() => {
+        hoverFrame = 0;
+        if (!hoverPos || viewer.isDestroyed()) return;
+        const hit: unknown = viewer.scene.pick(hoverPos, 3, 3);
+        const hitId = (hit as { id?: unknown } | undefined)?.id;
+        viewer.canvas.style.cursor =
+          typeof hitId === 'string' || hitId instanceof Cesium.Entity ? 'pointer' : '';
+      });
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
     // Idle "attract mode": spin slowly until the user grabs the globe, then stop so panning and
     // zoom feel natural. camera.rotate marks the scene dirty each tick, so it still renders
     // under requestRenderMode. LEFT_DOWN fires before LEFT_CLICK, so clicking a marker both
@@ -180,6 +232,8 @@ export const GlobeView: FC = () => {
     handler.setInputAction(stopSpin, Cesium.ScreenSpaceEventType.WHEEL);
 
     return () => {
+      if (hoverFrame) cancelAnimationFrame(hoverFrame);
+      ringRef.current = null;
       viewer.clock.onTick.removeEventListener(onTick);
       handler.destroy();
       byId.current.clear();
@@ -220,6 +274,7 @@ export const GlobeView: FC = () => {
     if (!viewer || !billboards || viewer.isDestroyed()) return;
     const map = byId.current;
     const visibleIds = new Set<string>();
+    let selectedPosition: Cesium.Cartesian3 | null = null;
 
     for (const entity of Object.values(entities)) {
       if (!isEntityVisible(entity, activeCategory, enabledSources, sourcesLoaded)) continue;
@@ -228,7 +283,7 @@ export const GlobeView: FC = () => {
       const position = Cesium.Cartesian3.fromDegrees(
         entity.longitude,
         entity.latitude,
-        entity.altitude || 0
+        renderHeight(entity.altitude)
       );
       let bb = map.get(entity.id);
       if (!bb) {
@@ -237,14 +292,24 @@ export const GlobeView: FC = () => {
           position,
           image: markerForCategory(entity.category),
           color: Cesium.Color.WHITE, // color is baked into the PNG pixels
-          disableDepthTestDistance: Number.POSITIVE_INFINITY
+          // Normal depth testing (NO disableDepthTestDistance): markers on the far side of the
+          // globe are hidden behind it instead of being drawn through the limb.
+          scaleByDistance: SCALE_BY_DISTANCE,
+          translucencyByDistance: TRANSLUCENCY_BY_DISTANCE
         });
         map.set(entity.id, bb);
       } else {
         bb.position = position;
         bb.show = true;
       }
-      bb.scale = (entity.id === selectedId ? SELECTED_SCALE_BOOST : 1.0) * MARKER_BASE_SCALE;
+      const isSelected = entity.id === selectedId;
+      bb.scale = (isSelected ? SELECTED_SCALE_BOOST : 1.0) * MARKER_BASE_SCALE;
+      if (isSelected) {
+        selectedPosition = position;
+        bb.translucencyByDistance = NO_FADE; // the selected marker never fades
+      } else if (bb.translucencyByDistance !== TRANSLUCENCY_BY_DISTANCE) {
+        bb.translucencyByDistance = TRANSLUCENCY_BY_DISTANCE;
+      }
 
       // ATC facilities additionally get their control-zone circle drawn on the globe.
       if (entity.category === ATC_ZONE_CATEGORY) {
@@ -272,6 +337,11 @@ export const GlobeView: FC = () => {
     // re-enabled layer costs nothing to bring back.
     for (const [id, zone] of zonesById.current) {
       if (!visibleIds.has(id)) zone.show = false;
+    }
+    const ring = ringRef.current;
+    if (ring) {
+      ring.show = selectedPosition !== null;
+      if (selectedPosition) ring.position = selectedPosition;
     }
     viewer.scene.requestRender();
   }, [entities, activeCategory, enabledSources, sourcesLoaded, selectedId]);

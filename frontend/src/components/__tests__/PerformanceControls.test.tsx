@@ -25,7 +25,8 @@ describe('PerformanceControls Component', () => {
   it('renders the FPS counter badge and the LOD switch', () => {
     renderControls();
     expect(screen.getByText(/FPS/i)).toBeInTheDocument();
-    expect(screen.getByText(/LOD Performance/i)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /LOD Performance/i })).toBeInTheDocument();
+    expect(screen.getByText('LOD')).toBeInTheDocument();
   });
 
   it('toggles LOD mode when the switch is clicked', () => {

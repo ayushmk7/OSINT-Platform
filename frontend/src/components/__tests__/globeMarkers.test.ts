@@ -6,6 +6,8 @@ import {
   bearingRad,
   isEntityVisible,
   zoneRadiusMeters,
+  renderHeight,
+  SURFACE_OFFSET_M,
   DEFAULT_ZONE_RADIUS_KM,
   ATC_ZONE_CATEGORY
 } from '../globeMarkers';
@@ -20,7 +22,9 @@ function recordingCtx() {
   const ctx = {
     strokeStyle: '',
     lineWidth: 0,
+    lineJoin: 'miter',
     globalAlpha: 1,
+    quadraticCurveTo: vi.fn(),
     beginPath: vi.fn(),
     closePath: vi.fn(),
     moveTo: vi.fn(),
@@ -88,15 +92,25 @@ describe('globe markers', () => {
 });
 
 describe('ATC control-tower marker', () => {
-  it('paints a filled tower silhouette in the category color with a black inset', () => {
+  it('paints a filled tower silhouette in the category color', () => {
     const { ctx, fillStyles, calls } = recordingCtx();
     styleForCategory(ATC_ZONE_CATEGORY).draw(ctx, '#b388ff');
 
     expect(fillStyles).toContain('#b388ff'); // the silhouette is drawn in the layer color
-    expect(fillStyles).toContain('#000000'); // …with the embossed cutout the other 5 icons use
-    expect(calls.fill).toHaveBeenCalled();
-    expect(calls.fillRect).toHaveBeenCalled(); // mast / shaft
-    expect(calls.arc).toHaveBeenCalled(); // beacon dot
+    expect(calls.fill).toHaveBeenCalled(); // cab
+    expect(calls.fillRect).toHaveBeenCalled(); // mast / shaft / base
+  });
+});
+
+describe('marker glyphs', () => {
+  // Contrast comes from the halo applied by the rasterizer, not from black plates painted
+  // inside each glyph (those made the old icons heavy and uneven in weight).
+  it.each(MARKER_CATEGORIES)('%s paints only in its layer color, never black', (category) => {
+    const { ctx, fillStyles } = recordingCtx();
+    const { draw, color } = styleForCategory(category);
+    draw(ctx, color);
+    expect(fillStyles.length).toBeGreaterThan(0);
+    expect(new Set(fillStyles)).toEqual(new Set([color]));
   });
 
   it('is a distinct shape and color from every other category', () => {
@@ -153,5 +167,26 @@ describe('isEntityVisible', () => {
   it('applies the category filter independently of the source filter', () => {
     expect(isEntityVisible(plane, 'aircraft', allSources, true)).toBe(true);
     expect(isEntityVisible(quake, 'aircraft', allSources, true)).toBe(false);
+  });
+});
+
+describe('renderHeight', () => {
+  it('lifts surface entities just above the ellipsoid', () => {
+    expect(renderHeight(0)).toBe(SURFACE_OFFSET_M);
+  });
+
+  // Earthquakes carry depth as a negative altitude; drawn there they vanish inside the globe.
+  it('clamps negative (sub-surface) altitudes to the surface', () => {
+    expect(renderHeight(-35000)).toBe(SURFACE_OFFSET_M);
+  });
+
+  it('keeps real altitudes for airborne / orbital entities', () => {
+    expect(renderHeight(10000)).toBe(10000 + SURFACE_OFFSET_M);
+  });
+
+  it('treats a missing or non-finite altitude as surface', () => {
+    expect(renderHeight(undefined)).toBe(SURFACE_OFFSET_M);
+    expect(renderHeight(null)).toBe(SURFACE_OFFSET_M);
+    expect(renderHeight(Number.NaN)).toBe(SURFACE_OFFSET_M);
   });
 });

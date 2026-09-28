@@ -1,105 +1,98 @@
-// Tactical filled-silhouette markers drawn directly with Canvas 2D — no icon library, no disc.
-// Each drawX() fills a solid silhouette in the category color, with a black inset cutout for an
-// embossed "outlined" feel plus a center dot. Rotatable shapes (flight, ship) point north
-// (heading 0) so GlobeView can rotate them to travel heading.
+// Tactical markers drawn directly with Canvas 2D — no icon library.
+//
+// Design rules (the globe carries ~1200 of these at once, so restraint matters):
+//   * Every glyph fits the same ~22px optical box on the 32px grid, so no layer out-weighs another
+//     (the old nuclear icon was a solid 28px yellow disk and dominated the whole map).
+//   * Thin strokes + small solid cores instead of big filled plates; a glyph reads by its SHAPE.
+//   * Contrast on ANY basemap (dark tiles, Blue Marble, relief) comes from a soft dark halo that
+//     `makeMarker` applies to every glyph — the draw fns never paint black themselves.
+// Rotatable shapes (flight, ship) point north (heading 0) so GlobeView can rotate them.
 type IconDrawFn = (ctx: CanvasRenderingContext2D, color: string) => void;
 
 const ICON_SIZE = 32; // logical drawing grid (CX = CY = 16)
 const CANVAS_SCALE = 2; // render at 2x so billboards stay crisp when Cesium scales them
 const CX = ICON_SIZE / 2;
 const CY = ICON_SIZE / 2;
+const STROKE = 2; // one line weight for every outlined glyph
 
-// satellite — diamond / rhombus (radar-tracked asset)
+function dot(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// satellite — outlined diamond with a solid core (radar-tracked asset)
 function drawSatelliteIcon(ctx: CanvasRenderingContext2D, color: string): void {
+  ctx.strokeStyle = color;
   ctx.fillStyle = color;
-  const R = 11;
+  ctx.lineWidth = STROKE;
+  ctx.lineJoin = 'miter';
+  const R = 9;
   ctx.beginPath();
   ctx.moveTo(CX, CY - R);
   ctx.lineTo(CX + R, CY);
   ctx.lineTo(CX, CY + R);
   ctx.lineTo(CX - R, CY);
   ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#000000';
-  const IR = 6;
-  ctx.beginPath();
-  ctx.moveTo(CX, CY - IR);
-  ctx.lineTo(CX + IR, CY);
-  ctx.lineTo(CX, CY + IR);
-  ctx.lineTo(CX - IR, CY);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(CX, CY, 2.5, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.stroke();
+  dot(ctx, CX, CY, 2.5);
 }
 
-// aircraft — top-down airplane, nose north (rotates to heading)
+// aircraft — slim top-down airplane, nose north (rotates to heading)
 function drawFlightIcon(ctx: CanvasRenderingContext2D, color: string): void {
   ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(CX, 3);
-  ctx.lineTo(CX + 2, 8);
-  ctx.lineTo(CX + 2, 22);
-  ctx.lineTo(CX + 3, 27);
-  ctx.lineTo(CX - 3, 27);
-  ctx.lineTo(CX - 2, 22);
-  ctx.lineTo(CX - 2, 8);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(CX, 12);
-  ctx.lineTo(CX + 13, 18);
-  ctx.lineTo(CX + 12, 20);
-  ctx.lineTo(CX, 15);
-  ctx.lineTo(CX - 12, 20);
-  ctx.lineTo(CX - 13, 18);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(CX, 24);
-  ctx.lineTo(CX + 6, 28);
-  ctx.lineTo(CX + 5, 29);
+  ctx.beginPath(); // fuselage
+  ctx.moveTo(CX, 4);
+  ctx.quadraticCurveTo(CX + 1.8, 5.5, CX + 1.6, 9);
+  ctx.lineTo(CX + 1.4, 22);
   ctx.lineTo(CX, 26);
-  ctx.lineTo(CX - 5, 29);
-  ctx.lineTo(CX - 6, 28);
+  ctx.lineTo(CX - 1.4, 22);
+  ctx.lineTo(CX - 1.6, 9);
+  ctx.quadraticCurveTo(CX - 1.8, 5.5, CX, 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath(); // swept main wing
+  ctx.moveTo(CX, 11);
+  ctx.lineTo(CX + 11, 17.5);
+  ctx.lineTo(CX + 11, 19);
+  ctx.lineTo(CX, 15.5);
+  ctx.lineTo(CX - 11, 19);
+  ctx.lineTo(CX - 11, 17.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath(); // tailplane
+  ctx.moveTo(CX, 22);
+  ctx.lineTo(CX + 4.5, 25.5);
+  ctx.lineTo(CX + 4.5, 26.5);
+  ctx.lineTo(CX, 25);
+  ctx.lineTo(CX - 4.5, 26.5);
+  ctx.lineTo(CX - 4.5, 25.5);
   ctx.closePath();
   ctx.fill();
 }
 
-// geological — earthquake epicenter: concentric seismic rings + solid core
+// geological — earthquake epicenter: two thin seismic rings + solid core
 function drawEarthquakeIcon(ctx: CanvasRenderingContext2D, color: string): void {
-  ctx.lineWidth = 1.5;
   ctx.strokeStyle = color;
-  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = 0.45;
   ctx.beginPath();
-  ctx.arc(CX, CY, 13, 0, Math.PI * 2);
+  ctx.arc(CX, CY, 10, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.globalAlpha = 0.6;
+  ctx.globalAlpha = 0.85;
   ctx.beginPath();
-  ctx.arc(CX, CY, 8, 0, Math.PI * 2);
+  ctx.arc(CX, CY, 6, 0, Math.PI * 2);
   ctx.stroke();
   ctx.globalAlpha = 1.0;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(CX, CY, 3.5, 0, Math.PI * 2);
-  ctx.fill();
+  dot(ctx, CX, CY, 2.75);
 }
 
-// radiation — trefoil hazard
+// radiation — bare trefoil (three blades + hub), no backing disk
 function drawRadiationIcon(ctx: CanvasRenderingContext2D, color: string): void {
   ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(CX, CY, 14, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#000000';
-  ctx.beginPath();
-  ctx.arc(CX, CY, 11, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = color;
-  const innerR = 3.5;
-  const outerR = 10;
+  const innerR = 3.2;
+  const outerR = 9.5;
   const bladeArc = Math.PI / 3;
   for (let i = 0; i < 3; i++) {
     const angle = (i * 2 * Math.PI) / 3 - Math.PI / 2;
@@ -109,72 +102,47 @@ function drawRadiationIcon(ctx: CanvasRenderingContext2D, color: string): void {
     ctx.closePath();
     ctx.fill();
   }
-  ctx.beginPath();
-  ctx.arc(CX, CY, 2.5, 0, Math.PI * 2);
-  ctx.fill();
+  dot(ctx, CX, CY, 1.8);
 }
 
-// maritime — top-down vessel: pointed bow (north), wide hull, flat stern (rotates to heading)
+// maritime — outlined top-down hull: pointed bow (north), flat stern (rotates to heading)
 function drawShipIcon(ctx: CanvasRenderingContext2D, color: string): void {
+  ctx.strokeStyle = color;
   ctx.fillStyle = color;
+  ctx.lineWidth = STROKE;
+  ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.moveTo(CX, 3);
-  ctx.lineTo(CX + 8, 12);
-  ctx.lineTo(CX + 8, 28);
-  ctx.lineTo(CX - 8, 28);
-  ctx.lineTo(CX - 8, 12);
+  ctx.moveTo(CX, 5);
+  ctx.quadraticCurveTo(CX + 6, 10, CX + 6, 15);
+  ctx.lineTo(CX + 6, 26);
+  ctx.lineTo(CX - 6, 26);
+  ctx.lineTo(CX - 6, 15);
+  ctx.quadraticCurveTo(CX - 6, 10, CX, 5);
   ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#000000';
-  ctx.beginPath();
-  ctx.moveTo(CX, 8);
-  ctx.lineTo(CX + 5, 14);
-  ctx.lineTo(CX + 5, 26);
-  ctx.lineTo(CX - 5, 26);
-  ctx.lineTo(CX - 5, 14);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = color;
-  ctx.fillRect(CX - 3, 17, 6, 6);
-  ctx.beginPath();
-  ctx.arc(CX, CY + 4, 1.5, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.stroke();
+  ctx.fillRect(CX - 2.5, 16, 5, 5); // bridge
 }
 
-// atc_zone — airport control tower: antenna mast, glazed cab, shaft, splayed base.
+// atc_zone — airport control tower: mast, flared glazed cab, slim shaft, base.
 // Marks the CENTRE of the control-zone circle drawn by GlobeView, and is what the user clicks.
 function drawATCTowerIcon(ctx: CanvasRenderingContext2D, color: string): void {
   ctx.fillStyle = color;
-  ctx.fillRect(CX - 0.75, 2, 1.5, 7); // antenna mast
+  ctx.fillRect(CX - 0.6, 4, 1.2, 5); // antenna mast
   ctx.beginPath(); // cab, wider at the top than the shaft
-  ctx.moveTo(CX - 7, 9);
-  ctx.lineTo(CX + 7, 9);
-  ctx.lineTo(CX + 5, 15);
-  ctx.lineTo(CX - 5, 15);
+  ctx.moveTo(CX - 6, 9);
+  ctx.lineTo(CX + 6, 9);
+  ctx.lineTo(CX + 4, 14);
+  ctx.lineTo(CX - 4, 14);
   ctx.closePath();
   ctx.fill();
-  ctx.fillRect(CX - 3, 15, 6, 10); // shaft
-  ctx.beginPath(); // splayed base
-  ctx.moveTo(CX - 8, 29);
-  ctx.lineTo(CX - 5, 25);
-  ctx.lineTo(CX + 5, 25);
-  ctx.lineTo(CX + 8, 29);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#000000'; // glazed window band — the embossed inset cutout
-  ctx.fillRect(CX - 5, 10.5, 10, 3.5);
-  ctx.fillStyle = color;
-  ctx.beginPath(); // beacon dot inside the cab
-  ctx.arc(CX, 12.25, 1.5, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.fillRect(CX - 1.75, 14, 3.5, 10); // shaft
+  ctx.fillRect(CX - 6, 24, 12, 2); // base
 }
 
 // fallback — filled dot
 function drawDefaultIcon(ctx: CanvasRenderingContext2D, color: string): void {
   ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(CX, CY, 6, 0, Math.PI * 2);
-  ctx.fill();
+  dot(ctx, CX, CY, 5);
 }
 
 export interface MarkerStyle {
@@ -223,8 +191,43 @@ function makeMarker(draw: IconDrawFn, color: string): string {
   const ctx = canvas.getContext('2d');
   if (!ctx) return ''; // headless/jsdom has no 2D context; markers are verified visually.
   ctx.scale(CANVAS_SCALE, CANVAS_SCALE);
+  // Soft dark halo behind every glyph: keeps a thin bright line legible over pale imagery
+  // (Blue Marble deserts, relief) without the heavy black plates the old icons used.
+  // shadowBlur is in device pixels (unaffected by ctx.scale).
+  ctx.shadowColor = HALO_COLOR;
+  ctx.shadowBlur = 2.5 * CANVAS_SCALE;
   draw(ctx, color);
   return canvas.toDataURL('image/png');
+}
+
+const HALO_COLOR = 'rgba(0, 0, 0, 0.85)';
+
+/** Colour of the selection ring drawn around the selected marker. */
+export const SELECTION_RING_COLOR = '#ffffff';
+
+// selection ring — thin bright circle with four tick marks, drawn around the selected marker.
+function drawSelectionRing(ctx: CanvasRenderingContext2D, color: string): void {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(CX, CY, 12, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 4; i++) {
+    const a = (i * Math.PI) / 2;
+    ctx.beginPath();
+    ctx.moveTo(CX + Math.cos(a) * 12, CY + Math.sin(a) * 12);
+    ctx.lineTo(CX + Math.cos(a) * 15.5, CY + Math.sin(a) * 15.5);
+    ctx.stroke();
+  }
+}
+
+let ringCache: string | null = null;
+
+/** PNG data-URL for the selection ring (same 32px grid as the markers), rasterized once. */
+export function selectionRingMarker(): string {
+  if (ringCache === null) ringCache = makeMarker(drawSelectionRing, SELECTION_RING_COLOR);
+  return ringCache;
 }
 
 const cache: Record<string, string> = {};
@@ -286,4 +289,17 @@ export function bearingRad(lat1: number, lon1: number, lat2: number, lon2: numbe
     Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
     Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(toRad(lon2 - lon1));
   return Math.atan2(y, x);
+}
+
+/**
+ * Height (metres) at which to DRAW an entity's billboard.
+ *
+ * Earthquakes carry their hypocentre depth as a negative altitude. Drawn there, the marker sits
+ * inside the opaque globe and is swallowed by it, so rendering clamps to just above the surface.
+ * Only the render position is clamped — the stored entity keeps its real depth.
+ */
+export const SURFACE_OFFSET_M = 10;
+export function renderHeight(altitude: number | null | undefined): number {
+  const h = typeof altitude === 'number' && Number.isFinite(altitude) ? altitude : 0;
+  return Math.max(h, 0) + SURFACE_OFFSET_M;
 }

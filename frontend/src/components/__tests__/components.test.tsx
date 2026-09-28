@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
 import { ThemeProvider } from '@mui/material/styles';
@@ -26,21 +26,25 @@ describe('Tactical HUD Components', () => {
     renderWithProviders(
       <TelemetryStatsBanner isConnected={true} isReconnecting={false} messageRate={42} />
     );
-    expect(screen.getByText('CONNECTED')).toBeInTheDocument();
-    expect(screen.getByText('42 msgs/s')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: /connection status: live/i })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Message rate' })).toHaveTextContent('42msg/s');
+    // Brand block: MK-OSINT, not the old product name.
+    expect(screen.getByText('MK')).toBeInTheDocument();
+    expect(screen.getByText('OSINT')).toBeInTheDocument();
+    expect(screen.queryByText(/reconvillage/i)).not.toBeInTheDocument();
   });
 
-  it('TelemetryStatsBanner shows RECONNECTING and OFFLINE states', () => {
+  it('TelemetryStatsBanner shows Reconnecting and Offline states', () => {
     const { unmount } = renderWithProviders(
       <TelemetryStatsBanner isConnected={false} isReconnecting={true} messageRate={0} />
     );
-    expect(screen.getByText('RECONNECTING')).toBeInTheDocument();
+    expect(screen.getByText('Reconnecting')).toBeInTheDocument();
     unmount();
 
     renderWithProviders(
       <TelemetryStatsBanner isConnected={false} isReconnecting={false} messageRate={0} />
     );
-    expect(screen.getByText('OFFLINE')).toBeInTheDocument();
+    expect(screen.getByText('Offline')).toBeInTheDocument();
   });
 
   it('LayerControlDrawer renders category filters and dispatches source toggles', async () => {
@@ -60,12 +64,24 @@ describe('Tactical HUD Components', () => {
     );
 
     renderWithProviders(<LayerControlDrawer open={true} onClose={() => {}} />);
-    expect(screen.getByText('LAYER CONTROLS')).toBeInTheDocument();
-    expect(screen.getByText('ALL CATEGORIES')).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Layer controls' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /geological/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /geological/i }));
     expect(store.getState().entities.activeCategoryFilter).toBe('geological');
+    expect(screen.getByRole('button', { name: /geological/i })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+
+    // "Show all" appears while a layer is isolated and clears the filter.
+    await user.click(screen.getByRole('button', { name: 'Show all' }));
+    expect(store.getState().entities.activeCategoryFilter).toBeNull();
+
+    // Re-clicking an isolated layer also returns to all layers.
+    await user.click(screen.getByRole('button', { name: /geological/i }));
+    await user.click(screen.getByRole('button', { name: /geological/i }));
+    expect(store.getState().entities.activeCategoryFilter).toBeNull();
 
     await user.click(screen.getByRole('checkbox', { name: 'USGS Earthquakes' }));
     expect(store.getState().sources.enabledSourceIds).not.toContain('usgs_earthquakes');
@@ -97,6 +113,29 @@ describe('Tactical HUD Components', () => {
 
     await user.click(atcButton);
     expect(store.getState().entities.activeCategoryFilter).toBe('atc_zone');
+    await user.click(atcButton);
+  });
+
+  it('LayerControlDrawer collapses to a launcher that reopens the panel', async () => {
+    const user = userEvent.setup();
+    let opened = false;
+    let closed = false;
+    const { rerender } = renderWithProviders(
+      <LayerControlDrawer open={true} onClose={() => (closed = true)} />
+    );
+    await user.click(screen.getByRole('button', { name: 'collapse layer controls' }));
+    expect(closed).toBe(true);
+
+    rerender(
+      <Provider store={store}>
+        <ThemeProvider theme={tacticalTheme}>
+          <LayerControlDrawer open={false} onClose={() => {}} onOpen={() => (opened = true)} />
+        </ThemeProvider>
+      </Provider>
+    );
+    expect(screen.queryByRole('complementary', { name: 'Layer controls' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'open layer controls' }));
+    expect(opened).toBe(true);
   });
 });
 
@@ -157,13 +196,16 @@ describe('EntityDetailsDrawer', () => {
     renderWithProviders(<EntityDetailsDrawer />);
     expect(screen.getByText('Test Satellite')).toBeInTheDocument();
     expect(screen.getByText('12.3400°')).toBeInTheDocument();
-    expect(screen.getByText('SATELLITE')).toBeInTheDocument();
+    expect(screen.getByText('Satellite')).toBeInTheDocument();
 
     // Speed/heading are not columns on `entities` — they come from the observation history the
     // drawer pulls through the RTK Query `getObservations` endpoint.
     await waitFor(() => expect(screen.getByText('91.5°')).toBeInTheDocument());
     expect(screen.getByText('7,660 kt')).toBeInTheDocument();
-    expect(screen.getByText('OBSERVATION HISTORY (REST)')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Observation history' })).toBeInTheDocument();
+    // Metadata is rendered as a key/value table, not raw JSON.
+    expect(screen.getByText('visibility')).toBeInTheDocument();
+    expect(screen.getByText('daylight')).toBeInTheDocument();
   });
 
   it('renders ATC zone metadata and a LiveATC link-out for an atc_zone entity', async () => {
@@ -200,7 +242,7 @@ describe('EntityDetailsDrawer', () => {
     store.dispatch(setSelectedEntityId('EGLL'));
 
     renderWithProviders(<EntityDetailsDrawer />);
-    expect(screen.getByText('ATC CONTROL ZONE')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'ATC control zone' })).toBeInTheDocument();
     expect(screen.getByText('London')).toBeInTheDocument();
     expect(screen.getByText('large_airport')).toBeInTheDocument();
     expect(screen.getByText('9 km')).toBeInTheDocument();
@@ -220,8 +262,23 @@ describe('EntityDetailsDrawer', () => {
   it('shows no ATC panel for a non-ATC entity', () => {
     store.dispatch(setSelectedEntityId('test_sat'));
     renderWithProviders(<EntityDetailsDrawer />);
-    expect(screen.queryByText('ATC CONTROL ZONE')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'ATC control zone' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /listen to atc/i })).not.toBeInTheDocument();
+  });
+
+  it('closes via the close button and the Escape key', async () => {
+    const user = userEvent.setup();
+    store.dispatch(setSelectedEntityId('test_sat'));
+    renderWithProviders(<EntityDetailsDrawer />);
+    await user.click(screen.getByRole('button', { name: 'close inspector' }));
+    expect(store.getState().entities.selectedEntityId).toBeNull();
+
+    act(() => {
+      store.dispatch(setSelectedEntityId('test_sat'));
+    });
+    await screen.findByRole('complementary', { name: 'Entity details' });
+    await user.keyboard('{Escape}');
+    expect(store.getState().entities.selectedEntityId).toBeNull();
   });
 
   it('renders nothing when no entity is selected', () => {

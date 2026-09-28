@@ -23,7 +23,7 @@ describe('FilterModeSelector Component', () => {
 
   it('renders all four filter mode toggle options', () => {
     renderSelector();
-    expect(screen.getByText('OFF')).toBeInTheDocument();
+    expect(screen.getByText('Off')).toBeInTheDocument();
     expect(screen.getByText('CRT')).toBeInTheDocument();
     expect(screen.getByText('NVG')).toBeInTheDocument();
     expect(screen.getByText('FLIR')).toBeInTheDocument();
@@ -41,7 +41,7 @@ describe('FilterModeSelector Component', () => {
     fireEvent.click(screen.getByText('FLIR'));
     expect(store.getState().filter.filterMode).toBe('flir');
 
-    fireEvent.click(screen.getByText('OFF'));
+    fireEvent.click(screen.getByText('Off'));
     expect(store.getState().filter.filterMode).toBe('none');
   });
 
