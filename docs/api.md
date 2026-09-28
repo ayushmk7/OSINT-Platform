@@ -62,6 +62,24 @@ Defined in `backend/src/app.ts`. Returns the spec file as `application/yaml`, re
 curl http://localhost:4000/api/openapi.yaml
 ```
 
+The build copies the spec to `backend/dist/api/openapi.yaml`, so the path works both from `src/` in development and from `dist/` in the container.
+
+---
+
+### GET /config.json
+
+Defined in `backend/src/runtime-config.ts`. It sits outside `/api` because it configures the web client, not the data API. It returns client-safe runtime settings from an allow-list of `MKOSINT_*` variables, with `Cache-Control: no-store`:
+
+```json
+{ "appName": "MK-OSINT", "cesiumIonToken": null, "defaultGlobeStyle": "blue_marble" }
+```
+
+| Field | Source variable | Default |
+| :-- | :-- | :-- |
+| `appName` | `MKOSINT_APP_NAME` | `"MK-OSINT"` |
+| `cesiumIonToken` | `MKOSINT_CESIUM_ION_TOKEN` | `null` |
+| `defaultGlobeStyle` | `MKOSINT_DEFAULT_GLOBE_STYLE` | `null` (the frontend uses `tactical`) |
+
 ---
 
 ### GET /api/sources

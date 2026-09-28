@@ -44,10 +44,20 @@ function shutdown(signal: string): void {
     client.terminate();
   }
   wss.close();
+  // Backstop for `docker stop` (SIGKILL after 10s): if a lingering HTTP connection keeps
+  // server.close() from finishing, still close the DB and exit cleanly. unref() so the timer
+  // itself never holds the process open.
+  setTimeout(() => {
+    console.warn('Shutdown timed out waiting for connections; forcing exit');
+    closeDatabase(db);
+    process.exit(0);
+  }, 5000).unref();
   server.close(() => {
     closeDatabase(db);
     process.exit(0);
   });
+  // Drop idle keep-alive sockets so close() completes promptly instead of waiting them out.
+  server.closeAllConnections();
 }
 
 process.on('SIGINT', () => shutdown('SIGINT'));

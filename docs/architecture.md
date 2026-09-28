@@ -8,7 +8,7 @@ The platform is an NPM-workspaces monorepo with two packages and one data direct
 | `frontend/` | Vite + React 18 + Redux Toolkit (with RTK Query) + MUI + CesiumJS. Renders the 3D globe, layer controls, entity inspector, HUD, cinematic filters and globe styles. |
 | `sources.d/` | Declarative YAML source definitions, one file per feed. See [data-sources.md](data-sources.md). |
 
-The backend runs on port 4000 and the Vite dev server on port 3000. In development, Vite proxies `/api` and `/ws` to the backend, so the browser only ever talks to port 3000. See [development.md](development.md).
+The backend runs on port 4000 and the Vite dev server on port 3000. In development, Vite proxies `/api` and `/ws` to the backend, so the browser only ever talks to port 3000. See [development.md](development.md). In the Docker image the backend serves the built frontend itself, so the UI, `/api`, `/config.json` and `/ws` all share port 4000 (see [development.md#deployment](development.md#deployment)).
 
 ## Data flow
 
@@ -173,7 +173,7 @@ Queries live in `backend/src/db/queries.ts`. All filters are bound as prepared-s
 
 ## REST API
 
-`backend/src/app.ts` mounts CORS, JSON body parsing, `GET /api/health`, `GET /api/openapi.yaml` (serves `backend/src/api/openapi.yaml`), and the router in `backend/src/api/index.ts` with `/api/sources`, `/api/entities` and `/api/observations`. `notFoundHandler` is registered last, so unknown routes get a JSON 404. Responses are always wrapped objects, never bare arrays. Errors use the envelope in `backend/src/api/errors.ts`. Full details are in [api.md](api.md).
+`backend/src/app.ts` mounts CORS, JSON body parsing, `GET /api/health`, `GET /api/openapi.yaml` (serves `api/openapi.yaml` next to the compiled code; the build copies it into `dist/`), and the router in `backend/src/api/index.ts` with `/api/sources`, `/api/entities` and `/api/observations`. `GET /config.json` (client-safe runtime settings, `backend/src/runtime-config.ts`) and, when enabled, the static frontend with SPA fallback (`backend/src/static-frontend.ts`) are mounted after the API router. `notFoundHandler` is registered last, so unknown routes get a JSON 404. Responses are always wrapped objects, never bare arrays. Errors use the envelope in `backend/src/api/errors.ts`. Full details are in [api.md](api.md).
 
 ## WebSocket server and broadcaster
 

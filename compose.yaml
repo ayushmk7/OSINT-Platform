@@ -1,0 +1,28 @@
+# Single-container MK-OSINT: UI, REST API and WebSocket on http://localhost:4000.
+#   docker compose up -d --build     (or: make docker-up)
+name: mk-osint
+
+services:
+  mk-osint:
+    build: .
+    image: mk-osint:latest
+    container_name: mk-osint
+    restart: unless-stopped
+    ports:
+      - '4000:4000'
+    env_file:
+      - path: backend/.env
+        required: false
+    environment:
+      # Container layout; override the rest (MKOSINT_*, INGEST_ENABLED, API keys) in backend/.env.
+      DB_PATH: /data/mk-osint.db
+      SOURCES_DIR: /app/sources.d
+      PORT: '4000'
+    volumes:
+      - mk-osint-data:/data
+      - ./sources.d:/app/sources.d:ro
+      - ./analysis.d:/app/analysis.d:ro
+    stop_grace_period: 15s
+
+volumes:
+  mk-osint-data:

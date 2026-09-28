@@ -57,7 +57,7 @@ make build      # backend: tsc -> backend/dist; frontend: tsc && vite build -> f
 npm start --prefix backend   # node dist/index.js
 ```
 
-The backend does not serve the frontend's static files. In production, serve `frontend/dist` from a web server that also proxies `/api` and `/ws` (with WebSocket upgrade) to the backend. The frontend only uses relative URLs and derives `ws://` or `wss://` from the page's own scheme.
+With `NODE_ENV=production` (or `MKOSINT_SERVE_FRONTEND=true`) the backend also serves `frontend/dist` on the same port, so one process is the whole app. See [Deployment](#deployment). You can still serve `frontend/dist` from a separate web server that proxies `/api`, `/config.json` and `/ws` (with WebSocket upgrade) to the backend. The frontend only uses relative URLs and derives `ws://` or `wss://` from the page's own scheme.
 
 ## Environment variables
 
@@ -69,6 +69,11 @@ All are optional and read by `backend/src/index.ts`. The template is [`backend/.
 | `SOURCES_DIR` | `<repo>/sources.d` | Directory of source YAML files. The default is computed from the backend's own location, so it works for both `src/` (dev) and `dist/` (build). |
 | `DB_PATH` | `mk-osint.db` | SQLite file. A relative path resolves against the process working directory, which is `backend/` under the npm scripts, giving `backend/mk-osint.db`. WAL mode also creates `-wal` and `-shm` files next to it. |
 | `INGEST_ENABLED` | enabled | Set to `false` to register sources without polling them. The API and WebSocket still serve whatever is already in the database. Any other value, or leaving it unset, enables ingestion. |
+| `MKOSINT_SERVE_FRONTEND` | unset | `true` serves the built frontend from the backend. `false` never does. Unset: served only when `NODE_ENV=production` and the build exists. |
+| `MKOSINT_FRONTEND_DIR` | `<repo>/frontend/dist` | Where the built frontend lives. |
+| `MKOSINT_APP_NAME` | `MK-OSINT` | Browser tab title, delivered through `/config.json`. |
+| `MKOSINT_CESIUM_ION_TOKEN` | unset | Cesium ion access token, delivered through `/config.json` and set as `Cesium.Ion.defaultAccessToken`. Browser-visible by design. |
+| `MKOSINT_DEFAULT_GLOBE_STYLE` | `tactical` | Initial globe style: `tactical`, `blue_marble`, `night_lights`, `neon_vector`, `terrain_relief` or `holographic`. Unknown values are ignored. |
 
 `dotenv` loads `.env` from the process working directory. With the npm scripts that is `backend/`, so put overrides in `backend/.env` (it is gitignored) or export them in your shell:
 
@@ -129,6 +134,38 @@ CI runs `npm run format:check`, so run `make format` before committing. There is
 ## Marker icon preview
 
 [`tools/tactical-icon-preview.html`](../tools/tactical-icon-preview.html) is a standalone page with no build step. Open it directly in a browser to inspect the globe's marker silhouettes at large size and at several rotations, which shows how heading rotation looks. It carries its own copy of the Canvas 2D drawing functions, so it does not update automatically when `frontend/src/components/globeMarkers.ts` changes. It covers every canonical category, including the `atc_zone` tower.
+
+## Deployment
+
+The repository ships a single-container setup: one Node process serves the UI, the REST API and the WebSocket feed on port 4000.
+
+```bash
+make docker-up      # docker compose up -d --build
+open http://localhost:4000
+make docker-down    # docker compose down (the data volume is kept)
+make docker-build   # build the image only
+```
+
+What the pieces do:
+
+- **`Dockerfile`** (multi-stage, `node:22-slim`). The `build` stage installs all workspaces and runs `npm run build`. The `deps` stage installs only the backend's production dependencies (it has `python3`, `make` and `g++` in case `better-sqlite3` has no prebuilt binary). The runtime stage copies `node_modules`, `backend/dist`, `frontend/dist`, `sources.d` and `analysis.d`, runs as the unprivileged `node` user, and starts `node backend/dist/index.js` directly so that SIGTERM reaches the process.
+- **`compose.yaml`** runs service `mk-osint` on port 4000 with a named volume `mk-osint-data` at `/data` (the SQLite database is `/data/mk-osint.db`). `./sources.d` and `./analysis.d` are bind-mounted read-only, so you can edit sources on the host and restart the container without rebuilding. `backend/.env` is loaded if it exists; put API keys and `MKOSINT_*` settings there. `DB_PATH`, `SOURCES_DIR` and `PORT` are fixed by the compose file for the container layout.
+- **Health check**: the image's `HEALTHCHECK` calls `GET /api/health` every 30 seconds. `docker inspect mk-osint --format '{{.State.Health.Status}}'` shows the result.
+- **Shutdown**: on SIGTERM (`docker stop`, `docker compose down`) the backend stops the scheduler, terminates WebSocket clients, closes the HTTP server and the database, and exits 0. If connections refuse to close, a 5 second backstop still closes the database and exits, well inside Docker's 10 second grace period.
+
+### Static file caching
+
+When the backend serves the frontend, Vite's content-hashed files under `/assets/` get `Cache-Control: public, max-age=31536000, immutable`. Everything else, including `index.html` and Cesium's unhashed `/cesium/*` files, gets `no-cache`, so the browser revalidates with the ETag. Unknown paths without a file extension fall back to `index.html`. `/api/*` and `/ws/*` never fall back, so API 404s stay JSON.
+
+### Runtime config (`/config.json`)
+
+`GET /config.json` returns the client-safe settings the frontend reads once at startup, before the first render:
+
+```json
+{ "appName": "MK-OSINT", "cesiumIonToken": null, "defaultGlobeStyle": null }
+```
+
+The response is built from an explicit allow-list of the `MKOSINT_*` variables in the table above and sent with `Cache-Control: no-store`. No other environment variable is ever included, so source API keys cannot leak through it. The Vite dev server proxies `/config.json` to the backend, so it works under `make dev` as well. If the request fails or takes longer than 3 seconds, the frontend uses its built-in defaults.
 
 ## Continuous integration
 
