@@ -15,7 +15,6 @@ display:
   icon: volcano
   color: '#ff3d00'
   size: 1.1
-  ttl: '60d'
   fields:
     - { path: metadata.category, label: Category }
     - { path: metadata.magnitude, label: Magnitude, format: number, precision: 1 }
