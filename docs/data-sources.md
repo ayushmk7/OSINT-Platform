@@ -11,6 +11,7 @@ This page documents the schema as implemented in `backend/src/engine/yaml-loader
 - Files are read once, at startup. Restart the backend to pick up changes.
 - Each file is checked by `validateSourceConfig()`. It must contain these fields as non-empty strings: `name`, `source_type`, `transport.type`, `transport.url`, `parser.format`, `entity.external_id`, `observation.latitude`, `observation.longitude`. It is also rejected if `schema_version` is present and not `1`, if `transport.retry.backoff` is not one of `exponential`, `linear` or `fixed`, or if `observation.scale` is malformed (see [`observation`](#observation)).
 - A file that fails validation is skipped with the error `Skipping invalid source definition <path>: <problems>`, which lists every problem found, separated by `;`.
+- A file whose `transport` references an environment variable (`${NAME}`, no default) that is unset or empty is skipped with the warning `source <name> disabled: missing env <NAME>`. It is not registered or polled. See [Secrets and environment variables](#secrets-and-environment-variables).
 - A file that is not valid YAML is logged and skipped. Neither case stops the other sources from loading.
 - If writing a source's row to the `sources` table fails at startup, the error `Failed to register source <name>; it will not be polled` is logged and that source is dropped. The other sources still start.
 - If `entity.category` is set to a value outside the canonical list, the source still loads, but a warning is logged. The frontend draws such entities with a grey fallback marker and does not list them in the layer drawer's category filters.
@@ -38,10 +39,17 @@ This page documents the schema as implemented in `backend/src/engine/yaml-loader
 
 | Field | Type | Required | Default | Meaning |
 | :-- | :-- | :-- | :-- | :-- |
-| `type` | string | **yes** | | Stored in `sources.transport`. The engine only implements HTTP polling and does not branch on this value; use `http_poll`. |
-| `url` | string | **yes** | | Endpoint to fetch. |
-| `method` | string | no | `GET` | HTTP method. No request body is sent. |
-| `headers` | map of string | no | | Extra request headers. `User-Agent: MK-OSINT/1.0` is sent by default and can be overridden here. |
+| `type` | string | **yes** | | Stored in `sources.transport`. `websocket` and `sse` open a long-lived stream (see [Streaming transports](#streaming-transports)); any other value (use `http_poll`) polls over HTTP. |
+| `url` | string | **yes** | | Endpoint to fetch (`ws://` / `wss://` for `websocket`). May contain `${NAME}` placeholders. |
+| `method` | string | no | `GET`, or `POST` when `body` is set | HTTP method. |
+| `body` | string or mapping | no | | Request body. A string is sent verbatim; a mapping is sent as JSON (or as a form when `content_type` is `application/x-www-form-urlencoded`). |
+| `content_type` | string | no | `application/json` for a mapping body | `Content-Type` of the body, unless `headers` already sets one. |
+| `auth` | mapping | no | | Credentials. See [Authentication](#authentication). |
+| `max_response_bytes` | integer | no | `52428800` (50 MB) | The response is aborted, without retrying, once it grows past this. |
+| `pagination` | mapping | no | | Fetch several pages per poll. See [Pagination](#pagination). |
+| `subscribe` | string or mapping | no | | `websocket` only: message sent after every (re)connect; a mapping is JSON-encoded. |
+| `batch_window` | duration | no | `2s` | `websocket` / `sse` only: how long messages are buffered before being ingested as one batch. Sub-second values such as `500ms` are honoured. |
+| `headers` | map of string | no | | Extra request headers; values may contain `${NAME}` placeholders. `User-Agent: MK-OSINT/1.0` is sent by default and can be overridden here. |
 | `timeout` | duration | no | `10s` | Per-attempt timeout. |
 | `interval` | duration | no | `60s` | Poll period. The TypeScript type marks it required, but the loader does not check it and falls back to 60 seconds. |
 | `retry.max_attempts` | number | no | `3` | Total attempts per poll, including the first. |
@@ -58,6 +66,81 @@ The retry defaults come from `DEFAULT_RETRY` in `backend/src/engine/retry.ts`, t
 | `fixed` | `initial_delay` | 1s, 1s, 1s, ... |
 
 Any non-2xx response counts as a failed attempt. When every attempt fails, the error is logged as `Error polling source <name>` and the source is tried again on the next interval.
+
+### Secrets and environment variables
+
+Source files never hold secrets. They reference environment variables instead, resolved from `process.env` (and `backend/.env`) each time a request is made:
+
+| Placeholder | Resolves to |
+| :-- | :-- |
+| `${NAME}` | The value of `NAME`. If `NAME` is unset or empty, the whole source is skipped at load with `source <name> disabled: missing env NAME`. |
+| `${NAME:-default}` | The value of `NAME`, or `default` when it is unset or empty. Never disables the source. |
+
+Placeholders work in `transport.url`, `transport.headers` values, `transport.body` (any string inside it), every `transport.auth` field and `transport.subscribe`. The stored `sources.url` and the API keep the unresolved placeholder text, and every resolved value (plus derived credentials such as OAuth2 tokens and Basic headers) is replaced by `***` in logged errors. Keyed sources therefore ship enabled but inert until their key is added to `backend/.env`; list every key a source needs in `backend/.env.example`.
+
+### Authentication
+
+`transport.auth` adds credentials to every request (and to the websocket upgrade / SSE request):
+
+```yaml
+auth: { type: bearer, token: '${EXAMPLE_TOKEN}' }                       # Authorization: Bearer <token>
+auth: { type: api_key, in: header, name: X-Api-Key, value: '${KEY}' }  # header (default)
+auth: { type: api_key, in: query, name: apikey, value: '${KEY}' }      # ?apikey=<value>
+auth: { type: basic, username: '${USER}', password: '${PASS}' }        # Authorization: Basic ...
+auth:
+  type: oauth2_client_credentials
+  token_url: https://auth.example.com/oauth/token
+  client_id: '${EXAMPLE_CLIENT_ID}'
+  client_secret: '${EXAMPLE_CLIENT_SECRET}'
+  scope: read            # optional
+  client_auth: post      # optional: post (credentials in the form body, default) or basic
+```
+
+`api_key` also accepts the shorthands `header: X-Api-Key` or `query: apikey` in place of `in` + `name`. For `oauth2_client_credentials` the engine POSTs `grant_type=client_credentials` to `token_url` and caches the `access_token` in memory until 30 seconds before `expires_in` (one hour if the server omits it); the token is then sent as `Authorization: Bearer`. A failed token request is reported with its HTTP status only.
+
+### Pagination
+
+`transport.pagination` makes one poll fetch several pages. Each page is parsed with the source's `parser` settings, and the records of all pages are concatenated before filtering and mapping (`parser.max_records` caps each page and the total).
+
+| Field | Applies to | Default | Meaning |
+| :-- | :-- | :-- | :-- |
+| `type` | all | | `page`, `offset` or `cursor`. |
+| `param` | all | | Query parameter carrying the page number, offset or cursor. |
+| `start` | page, offset | `1` / `0` | First page number / first offset. |
+| `size_param` | page, offset | | Query parameter carrying the page size, sent when `size` is also set. |
+| `size` | page, offset | | Page size. Required for `offset` (the offset advances by it). A page with fewer than `size` records ends the walk. |
+| `cursor_path` | cursor | | Dot path into the parsed JSON response to the next cursor. The first request has no cursor; the walk ends when the value is missing, empty, `null`, `false` or repeats. |
+| `max_pages` | all | `10` | Hard cap on requests per poll. |
+| `stop_when_empty` | all | `true` | Stop at the first page that yields no records. |
+
+```yaml
+pagination: { type: page, param: page, start: 1, size_param: per_page, size: 100 }
+pagination: { type: offset, param: offset, size_param: limit, size: 500, max_pages: 20 }
+pagination: { type: cursor, param: cursor, cursor_path: meta.next_cursor }
+```
+
+Pagination is not supported on streaming transports.
+
+### Streaming transports
+
+`transport.type: websocket` and `transport.type: sse` hold one connection open instead of polling (`interval` is ignored):
+
+- **websocket** connects to `url` (auth headers are sent on the upgrade request; `api_key` in `query` goes into the URL), sends `subscribe` after every connect, and treats each text or binary frame as one message.
+- **sse** issues a streaming GET (or POST when `body` is set) with `Accept: text/event-stream`, and treats the joined `data:` lines of each event as one message. The last `id:` is sent back as `Last-Event-ID` on reconnect.
+
+Each message is parsed on its own with the source's `parser` (so `records_path` applies per message; a message may yield zero, one or many records). An unparseable message is logged and skipped. Records are buffered and, every `batch_window` (default `2s`), ingested as one batch through the same filter, map and persist path as a poll, so `recording.mode` and broadcasting behave the same. When the connection closes or fails, the engine reconnects after `retryDelayMs()` using `transport.retry` (`initial_delay` default 1s, `max_delay` default **60s** for streams, `backoff` default exponential); the attempt counter resets once a connection opens. `retry.max_attempts` is not used: streams retry forever until the backend stops.
+
+```yaml
+transport:
+  type: websocket
+  url: wss://stream.example.com/v1
+  subscribe: { action: subscribe, api_key: '${EXAMPLE_STREAM_KEY}', channels: [positions] }
+  batch_window: 2s
+  retry: { initial_delay: 1s, max_delay: 30s }
+parser:
+  format: json
+  records_path: payload
+```
 
 ### Duration format
 
