@@ -94,9 +94,20 @@ Within a poll:
 
 After the transaction commits, `onEntityUpdate` is called for each changed entity.
 
+- `ingestRecords(config, records)` is the filter, map and persist half of a poll (steps 1-5 above plus the broadcast). `pollSource()` calls it with the records of one poll; streaming sources call it with each batch. `parseContent(config, text)` runs the source's parser on one body or one stream message.
+- A source whose `transport.type` is `websocket` or `sse` is not polled: `start()` opens its stream with `startStream()` (`transports/`), and `stop()` closes every stream.
+
+### transports (`transports/`), env (`env.ts`), auth (`auth.ts`), pagination (`pagination.ts`)
+
+- `env.ts` resolves `${NAME}` / `${NAME:-default}` placeholders (`substituteEnv`), lists unset ones (`missingEnvVars`, used by the loader to skip a source) and masks secret values in messages (`maskSecrets`). Source configs keep the unresolved text; resolution happens per request.
+- `transport-config.ts` holds the types and validation (`validateTransportExtras`, called from `validateSourceConfig`) for `auth`, `body`, `max_response_bytes`, `pagination`, `subscribe` and `batch_window`.
+- `transports/request.ts` `resolveRequest()` substitutes env, applies auth (`auth.ts` `applyAuth`: bearer, api_key, basic, OAuth2 client credentials with an in-memory token cache) and encodes the body.
+- `transports/http.ts` `fetchHttpRecords()` is one HTTP poll: it resolves the request, then calls `fetchUrl()` once, or once per page through `pagination.ts` `fetchPaginated()`, parsing each page with the scheduler's parser and concatenating the records. Errors are re-thrown with secrets masked.
+- `transports/stream.ts` `StreamRunner` is the shared base for `transports/websocket.ts` (the `ws` client) and `transports/sse.ts` (fetch streaming plus `SseDecoder`): it parses each message, buffers records for `batch_window`, hands each batch to `ingestRecords`, and reconnects with `retryDelayMs()`.
+
 ### http-fetcher (`http-fetcher.ts`)
 
-`fetchUrl()` uses the global `fetch` with an `AbortController` timeout. It sends `User-Agent: MK-OSINT/1.0` plus any configured headers, treats any non-2xx status as a failure, and returns the body as text. Failed attempts are retried after `retryDelayMs(attempt, backoff, initialDelayMs, maxDelayMs)`: `exponential` (`initialDelayMs * 2^(attempt-1)`), `linear` (`initialDelayMs * attempt`) or `fixed` (`initialDelayMs`), always capped at `maxDelayMs`. After the last attempt it throws the last error.
+`fetchUrl()` uses the global `fetch` with an `AbortController` timeout. It sends `User-Agent: MK-OSINT/1.0` plus any configured headers, treats any non-2xx status as a failure, and returns the body as text. An optional request `body` is sent as-is. The body is read through `readTextLimited()`, which aborts with `ResponseTooLargeError` (never retried) once it exceeds `maxResponseBytes` (default 50 MB), checking `Content-Length` first and then the streamed byte count. Failed attempts are retried after `retryDelayMs(attempt, backoff, initialDelayMs, maxDelayMs)`: `exponential` (`initialDelayMs * 2^(attempt-1)`), `linear` (`initialDelayMs * attempt`) or `fixed` (`initialDelayMs`), always capped at `maxDelayMs`. After the last attempt it throws the last error.
 
 ### retry (`retry.ts`)
 

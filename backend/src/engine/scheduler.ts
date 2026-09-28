@@ -1,9 +1,9 @@
 import Database from 'better-sqlite3';
-import { fetchUrl } from './http-fetcher';
-import { DEFAULT_RETRY } from './retry';
 import { EntityRecord, mapRecord, passesFilter } from './field-mapper';
 import { parsePayload } from './parsers';
 import { SourceConfig, loadSourcesFromDir, parseDurationSeconds } from './yaml-loader';
+import { isStreamTransport } from './transport-config';
+import { StreamHandle, fetchHttpRecords, startStream } from './transports';
 
 /** Retention cap for `append` sources: newest N observations kept per entity. */
 export const MAX_OBS_PER_ENTITY = 200;
@@ -12,6 +12,7 @@ export class IngestionScheduler {
   private db: Database.Database;
   private sourcesDir: string;
   private timers: NodeJS.Timeout[] = [];
+  private streams: StreamHandle[] = [];
   private configs: SourceConfig[] = [];
   private lastPositions = new Map<string, string>();
 
@@ -71,36 +72,46 @@ export class IngestionScheduler {
   }
 
   /**
+   * Turn one response body (or one stream message) into raw records using the source's
+   * parser settings. Shared by polls (called once per page) and streams (once per message).
+   */
+  public parseContent(config: SourceConfig, content: string): unknown[] {
+    return parsePayload(
+      content,
+      config.parser.format,
+      config.parser.records_path,
+      config.parser.max_records
+    );
+  }
+
+  /**
    * One fetch -> parse -> map -> persist cycle. Returns the number of records written.
    * A failure is logged with the source name and swallowed only at this boundary so the
    * scheduler keeps running; it is never silently dropped.
    */
   public async pollSource(config: SourceConfig): Promise<number> {
     try {
-      const rawContent = await fetchUrl({
-        url: config.transport.url,
-        method: config.transport.method || 'GET',
-        headers: config.transport.headers,
-        timeoutMs: parseDurationSeconds(config.transport.timeout, 10) * 1000,
-        maxAttempts: config.transport.retry?.max_attempts ?? DEFAULT_RETRY.maxAttempts,
-        initialDelayMs:
-          parseDurationSeconds(
-            config.transport.retry?.initial_delay,
-            DEFAULT_RETRY.initialDelayMs / 1000
-          ) * 1000,
-        maxDelayMs:
-          parseDurationSeconds(config.transport.retry?.max_delay, DEFAULT_RETRY.maxDelayMs / 1000) *
-          1000,
-        backoff: config.transport.retry?.backoff ?? DEFAULT_RETRY.backoff
-      });
-
-      const rawRecords = parsePayload(
-        rawContent,
-        config.parser.format,
-        config.parser.records_path,
-        config.parser.max_records
+      let rawRecords = await fetchHttpRecords(config.transport, (content) =>
+        this.parseContent(config, content)
       );
+      // With pagination each page is capped by max_records; cap the concatenation too.
+      const max = config.parser.max_records;
+      if (max && max > 0 && rawRecords.length > max) rawRecords = rawRecords.slice(0, max);
+      return this.ingestRecords(config, rawRecords);
+    } catch (err) {
+      console.error(`Error polling source ${config.name}:`, err);
+      return 0;
+    }
+  }
 
+  /**
+   * Filter -> map -> persist a batch of raw records in one transaction and broadcast the
+   * entities that are new or moved. Used by both HTTP polls and websocket/sse stream batches.
+   * Returns the number of records written; throws on a database error.
+   */
+  public ingestRecords(config: SourceConfig, rawRecords: unknown[]): number {
+    // Inner block keeps the original poll body at its old indentation (smaller diffs).
+    {
       const upsertEntityStmt = this.db.prepare(`
         INSERT INTO entities (id, source_id, category, name, latitude, longitude, altitude, timestamp, metadata)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -230,9 +241,6 @@ export class IngestionScheduler {
         console.log(`Source ${config.name}: ${filtered} record(s) excluded by filter rules`);
       }
       return written;
-    } catch (err) {
-      console.error(`Error polling source ${config.name}:`, err);
-      return 0;
     }
   }
 
@@ -242,6 +250,18 @@ export class IngestionScheduler {
 
     for (const config of this.configs) {
       if (config.enabled === false) continue;
+      if (isStreamTransport(config.transport.type)) {
+        this.streams.push(
+          startStream(config.transport, {
+            name: config.name,
+            parse: (message) => this.parseContent(config, message),
+            onBatch: (records) => {
+              this.ingestRecords(config, records);
+            }
+          })
+        );
+        continue;
+      }
       const intervalSec = parseDurationSeconds(config.transport.interval, 60);
 
       void this.pollSource(config);
@@ -259,5 +279,9 @@ export class IngestionScheduler {
       clearInterval(timer);
     }
     this.timers = [];
+    for (const stream of this.streams) {
+      stream.stop();
+    }
+    this.streams = [];
   }
 }

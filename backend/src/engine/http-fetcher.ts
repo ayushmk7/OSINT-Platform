@@ -12,6 +12,48 @@ export interface FetchOptions {
   maxDelayMs?: number;
   /** How the delay grows between attempts (default exponential). */
   backoff?: BackoffStrategy;
+  /** Request body, sent as-is (callers encode JSON / form bodies). */
+  body?: string;
+  /** Abort (without retrying) once the body exceeds this many bytes. Default 50 MB. */
+  maxResponseBytes?: number;
+}
+
+export const DEFAULT_MAX_RESPONSE_BYTES = 50 * 1024 * 1024;
+
+/** A response over `maxResponseBytes`. Not retried: the next attempt would be as large. */
+export class ResponseTooLargeError extends Error {
+  constructor(limit: number) {
+    super(`response exceeds max_response_bytes (${limit})`);
+    this.name = 'ResponseTooLargeError';
+  }
+}
+
+/**
+ * Read a response body as UTF-8 text, aborting as soon as it grows past `limit` bytes
+ * (checked against Content-Length first, then while streaming).
+ */
+export async function readTextLimited(response: Response, limit: number): Promise<string> {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > limit) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new ResponseTooLargeError(limit);
+  }
+  if (!response.body) return '';
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel().catch(() => undefined);
+      throw new ResponseTooLargeError(limit);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 const USER_AGENT = 'MK-OSINT/1.0';
@@ -34,7 +76,9 @@ export async function fetchUrl(options: FetchOptions): Promise<string> {
     maxAttempts = DEFAULT_RETRY.maxAttempts,
     initialDelayMs = DEFAULT_RETRY.initialDelayMs,
     maxDelayMs = DEFAULT_RETRY.maxDelayMs,
-    backoff = DEFAULT_RETRY.backoff
+    backoff = DEFAULT_RETRY.backoff,
+    body,
+    maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES
   } = options;
 
   let lastError: Error | null = null;
@@ -47,6 +91,7 @@ export async function fetchUrl(options: FetchOptions): Promise<string> {
       const response = await fetch(url, {
         method,
         headers: { 'User-Agent': USER_AGENT, ...headers },
+        body,
         signal: controller.signal
       });
 
@@ -54,8 +99,9 @@ export async function fetchUrl(options: FetchOptions): Promise<string> {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      return await response.text();
+      return await readTextLimited(response, maxResponseBytes);
     } catch (err) {
+      if (err instanceof ResponseTooLargeError) throw err;
       lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt < maxAttempts) {
         await sleep(retryDelayMs(attempt, backoff, initialDelayMs, maxDelayMs));

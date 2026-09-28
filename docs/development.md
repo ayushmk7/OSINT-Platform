@@ -83,6 +83,8 @@ cp backend/.env.example backend/.env
 INGEST_ENABLED=false npm run dev --prefix backend
 ```
 
+Source API keys and other secrets are also environment variables. Source YAML references them as `${NAME}` (or `${NAME:-default}`); a source whose variable is unset is skipped at startup with `source <name> disabled: missing env <NAME>`. Add the keys you have to `backend/.env`; the keys the bundled sources use are listed in `backend/.env.example`. See [Secrets and environment variables](data-sources.md#secrets-and-environment-variables).
+
 To start from an empty database, stop the backend and delete `backend/mk-osint.db*`. The schema is recreated on the next start.
 
 Older checkouts used `backend/recon.db`. It is no longer read (and holds pre-namespacing entity ids); delete it.

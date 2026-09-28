@@ -304,6 +304,8 @@ describe('Ingestion Scheduler', () => {
     mockFetch.mockResolvedValue(JSON.stringify([]));
     const scheduler = new IngestionScheduler(db, sourcesDir);
     scheduler.start();
+    // The first poll starts right away; request resolution (env/auth) takes a microtask.
+    await new Promise((resolve) => setImmediate(resolve));
     expect(mockFetch).toHaveBeenCalled();
     scheduler.stop();
     // Allow the immediate in-flight polls to settle before the db is closed.

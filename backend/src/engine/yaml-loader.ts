@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import YAML from 'yaml';
 import { BACKOFF_STRATEGIES, BackoffStrategy } from './retry';
+import { envScope, missingEnvVars } from './env';
+import { TransportExtras, validateTransportExtras } from './transport-config';
 
 /** `schema_version` values this engine understands. Absent is treated as 1. */
 export const SUPPORTED_SCHEMA_VERSIONS = [1] as const;
@@ -71,7 +73,8 @@ export interface SourceConfig {
   layer_type: string;
   display_name: string;
   enabled?: boolean;
-  transport: {
+  /** Base fields plus the optional auth/body/pagination/stream fields (TransportExtras). */
+  transport: TransportExtras & {
     type: string;
     url: string;
     method?: string;
@@ -190,6 +193,7 @@ export function validateSourceConfig(config: unknown): string[] {
           `(expected one of: ${BACKOFF_STRATEGIES.join(', ')})`
       );
     }
+    errors.push(...validateTransportExtras(transport));
   }
 
   if (!c.parser || typeof c.parser !== 'object') {
@@ -253,6 +257,13 @@ export function loadSourcesFromDir(dirPath: string): SourceConfig[] {
       const errors = validateSourceConfig(raw);
       if (errors.length === 0) {
         const parsed = raw as SourceConfig;
+        // `${NAME}` placeholders are resolved per request; a source whose required env var
+        // is unset stays inert (skipped with a warning) instead of failing every poll.
+        const missingEnv = missingEnvVars(envScope(parsed.transport));
+        if (missingEnv.length > 0) {
+          console.warn(`source ${parsed.name} disabled: missing env ${missingEnv.join(', ')}`);
+          continue;
+        }
         // A non-canonical category still loads (the engine is data-driven and must not
         // hard-fail on a new layer), but it is surfaced loudly because the frontend has no
         // marker for it.
