@@ -65,7 +65,7 @@ Assemble the full YAML source definition following Schema v2 standard structure:
 ### Step 5: Validate and Write Output File
 1. Verify that the YAML syntax is strictly valid and formatted cleanly.
 2. Ensure mandatory schema fields (`schema_version`, `name`, `transport`, `parser`, `entity`, `observation`, `display`) are present.
-3. Write the final YAML file to `/Users/alevsk/Development/vibe-coding-osint-platform/sources.d/<source_name>.yaml`.
+3. Write the final YAML file to `sources.d/<source_name>.yaml` (relative to the repo root).
 
 ```bash
 rtk make test # or run linter/validator script if available
